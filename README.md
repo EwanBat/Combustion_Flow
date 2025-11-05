@@ -84,34 +84,27 @@ Edit `main.py` to adjust:
 ### Governing Equations
 
 **Momentum (Navier-Stokes):**
-$$
-\frac{\partial \vec{u}}{\partial t} + \vec{u} \cdot \nabla \vec{u} = -\frac{\nabla P}{\rho} + \nu \nabla^2 \vec{u}
-$$
-$$
-\nabla \cdot \vec{u} = 0 \quad \text{(incompressibility)}
-$$
+
+$' \frac{\partial \vec{u}}{\partial t} + \vec{u} \cdot \nabla \vec{u} = -\frac{\nabla P}{\rho} + \nu \nabla^2 \vec{u} '$
+$' \nabla \cdot \vec{u} = 0 \quad \text{(incompressibility)} '$
 
 **Species transport:**
-$$
-\frac{\partial Y_i}{\partial t} + \vec{u} \cdot \nabla Y_i = D \nabla^2 Y_i + \frac{\omega_i}{\rho}
-$$
+
+$' \frac{\partial Y_i}{\partial t} + \vec{u} \cdot \nabla Y_i = D \nabla^2 Y_i + \frac{\omega_i}{\rho} '$
 
 **Energy (temperature):**
-$$
-\frac{\partial T}{\partial t} + \vec{u} \cdot \nabla T = \alpha \nabla^2 T + \frac{Q}{\rho c_p}
-$$
+
+$' \frac{\partial T}{\partial t} + \vec{u} \cdot \nabla T = \alpha \nabla^2 T + \frac{Q}{\rho c_p} '$
 
 ### Reaction Model
 
 Simple one-step methane combustion:
-$$
-\text{CH}_4 + 2\text{O}_2 \rightarrow \text{CO}_2 + 2\text{H}_2\text{O}
-$$
+
+$' \text{CH}_4 + 2\text{O}_2 \rightarrow \text{CO}_2 + 2\text{H}_2\text{O} '$
 
 With Arrhenius rate:
-$$
-\omega = A \cdot \exp\left(-\frac{E_a}{RT}\right) \cdot [\text{CH}_4] \cdot [\text{O}_2]^2
-$$
+
+$' \omega = A \cdot \exp\left(-\frac{E_a}{RT}\right) \cdot [\text{CH}_4] \cdot [\text{O}_2]^2 '$
 
 ## Visualization
 
