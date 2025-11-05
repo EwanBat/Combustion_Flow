@@ -114,6 +114,12 @@ The code generates:
 - **Species concentration plots** for each chemical species
 - **Animations** showing temporal evolution
 
+### Example Results
+
+![Species Concentrations](concentrations.png)
+*Species concentration profiles showing the distribution of reactants and products in the computational domain.*
+
+
 ## Output
 
 Simulation data is saved as NumPy arrays (`.npy`) in the `data/` folder:
