@@ -105,77 +105,133 @@ class ChemistryManager:
 
     # Boundary conditions for species (mêmes BCs que dans System)
     def chemistry_boundaries(self, Y_CH4_new, Y_O2_new, Y_CO2_new, Y_H2O_new, Y_N2_new, ind_inlet, ind_coflow):
-        # --- Left boundary (i=0) - Neumann (zero gradient) ---
-        i = 0
-        for j in range(1, self.m-1):
-            Y_CH4_new[i, j] = Y_CH4_new[i+1, j]
-            Y_O2_new[i, j] = Y_O2_new[i+1, j]
-            Y_CO2_new[i, j] = Y_CO2_new[i+1, j]
-            Y_H2O_new[i, j] = Y_H2O_new[i+1, j]
-            Y_N2_new[i, j] = Y_N2_new[i+1, j]
+        # --- Left boundary (i=0,1) - Neumann (zero gradient) for 4th-order ---
+        for j in range(2, self.m-2):
+            Y_CH4_new[0, j] = Y_CH4_new[2, j]
+            Y_O2_new[0, j] = Y_O2_new[2, j]
+            Y_CO2_new[0, j] = Y_CO2_new[2, j]
+            Y_H2O_new[0, j] = Y_H2O_new[2, j]
+            Y_N2_new[0, j] = Y_N2_new[2, j]
+            Y_CH4_new[1, j] = Y_CH4_new[2, j]
+            Y_O2_new[1, j] = Y_O2_new[2, j]
+            Y_CO2_new[1, j] = Y_CO2_new[2, j]
+            Y_H2O_new[1, j] = Y_H2O_new[2, j]
+            Y_N2_new[1, j] = Y_N2_new[2, j]
         
-        # --- CH4 inlet (slot region, bottom wall j=0) ---
+        # --- CH4 inlet (slot region, bottom wall j=0,1) ---
         Y_CH4_new[:ind_inlet, 0] = 1.0
         Y_O2_new[:ind_inlet, 0] = 0.0
         Y_CO2_new[:ind_inlet, 0] = 0.0
         Y_H2O_new[:ind_inlet, 0] = 0.0
         Y_N2_new[:ind_inlet, 0] = 0.0
+        Y_CH4_new[:ind_inlet, 1] = 1.0
+        Y_O2_new[:ind_inlet, 1] = 0.0
+        Y_CO2_new[:ind_inlet, 1] = 0.0
+        Y_H2O_new[:ind_inlet, 1] = 0.0
+        Y_N2_new[:ind_inlet, 1] = 0.0
         
-        # --- O2+N2 inlet (slot region, top wall j=m-1) ---
+        # --- O2+N2 inlet (slot region, top wall j=m-1, m-2) ---
         Y_CH4_new[:ind_inlet, self.m-1] = 0.0
         Y_O2_new[:ind_inlet, self.m-1] = 0.21
         Y_CO2_new[:ind_inlet, self.m-1] = 0.0
         Y_H2O_new[:ind_inlet, self.m-1] = 0.0
         Y_N2_new[:ind_inlet, self.m-1] = 0.79
+        Y_CH4_new[:ind_inlet, self.m-2] = 0.0
+        Y_O2_new[:ind_inlet, self.m-2] = 0.21
+        Y_CO2_new[:ind_inlet, self.m-2] = 0.0
+        Y_H2O_new[:ind_inlet, self.m-2] = 0.0
+        Y_N2_new[:ind_inlet, self.m-2] = 0.79
         
-        # --- N2 coflow inlet (coflow region, bottom wall j=0) ---
+        # --- N2 coflow inlet (coflow region, bottom wall j=0,1) ---
         Y_CH4_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_O2_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_CO2_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_H2O_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_N2_new[ind_inlet:ind_coflow, 0] = 1.0
+        Y_CH4_new[ind_inlet:ind_coflow, 1] = 0.0
+        Y_O2_new[ind_inlet:ind_coflow, 1] = 0.0
+        Y_CO2_new[ind_inlet:ind_coflow, 1] = 0.0
+        Y_H2O_new[ind_inlet:ind_coflow, 1] = 0.0
+        Y_N2_new[ind_inlet:ind_coflow, 1] = 1.0
         
-        # --- N2 coflow inlet (coflow region, top wall j=m-1) ---
+        # --- N2 coflow inlet (coflow region, top wall j=m-1,m-2) ---
         Y_CH4_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_O2_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_CO2_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_H2O_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_N2_new[ind_inlet:ind_coflow, self.m-1] = 1.0
+        Y_CH4_new[ind_inlet:ind_coflow, self.m-2] = 0.0
+        Y_O2_new[ind_inlet:ind_coflow, self.m-2] = 0.0
+        Y_CO2_new[ind_inlet:ind_coflow, self.m-2] = 0.0
+        Y_H2O_new[ind_inlet:ind_coflow, self.m-2] = 0.0
+        Y_N2_new[ind_inlet:ind_coflow, self.m-2] = 1.0
         
-        # --- Lower wall (outlet region, j=0) - Neumann ---
-        Y_CH4_new[ind_coflow:, 0] = Y_CH4_new[ind_coflow:, 1]
-        Y_O2_new[ind_coflow:, 0] = Y_O2_new[ind_coflow:, 1]
-        Y_CO2_new[ind_coflow:, 0] = Y_CO2_new[ind_coflow:, 1]
-        Y_H2O_new[ind_coflow:, 0] = Y_H2O_new[ind_coflow:, 1]
-        Y_N2_new[ind_coflow:, 0] = Y_N2_new[ind_coflow:, 1]
+        # --- Lower wall (outlet region, j=0,1) - Neumann ---
+        Y_CH4_new[ind_coflow:, 0] = Y_CH4_new[ind_coflow:, 2]
+        Y_O2_new[ind_coflow:, 0] = Y_O2_new[ind_coflow:, 2]
+        Y_CO2_new[ind_coflow:, 0] = Y_CO2_new[ind_coflow:, 2]
+        Y_H2O_new[ind_coflow:, 0] = Y_H2O_new[ind_coflow:, 2]
+        Y_N2_new[ind_coflow:, 0] = Y_N2_new[ind_coflow:, 2]
+        Y_CH4_new[ind_coflow:, 1] = Y_CH4_new[ind_coflow:, 2]
+        Y_O2_new[ind_coflow:, 1] = Y_O2_new[ind_coflow:, 2]
+        Y_CO2_new[ind_coflow:, 1] = Y_CO2_new[ind_coflow:, 2]
+        Y_H2O_new[ind_coflow:, 1] = Y_H2O_new[ind_coflow:, 2]
+        Y_N2_new[ind_coflow:, 1] = Y_N2_new[ind_coflow:, 2]
         
-        # --- Upper wall (outlet region, j=m-1) - Neumann ---
-        Y_CH4_new[ind_coflow:, self.m-1] = Y_CH4_new[ind_coflow:, self.m-2]
-        Y_O2_new[ind_coflow:, self.m-1] = Y_O2_new[ind_coflow:, self.m-2]
-        Y_CO2_new[ind_coflow:, self.m-1] = Y_CO2_new[ind_coflow:, self.m-2]
-        Y_H2O_new[ind_coflow:, self.m-1] = Y_H2O_new[ind_coflow:, self.m-2]
-        Y_N2_new[ind_coflow:, self.m-1] = Y_N2_new[ind_coflow:, self.m-2]
+        # --- Upper wall (outlet region, j=m-1,m-2) - Neumann ---
+        Y_CH4_new[ind_coflow:, self.m-1] = Y_CH4_new[ind_coflow:, self.m-3]
+        Y_O2_new[ind_coflow:, self.m-1] = Y_O2_new[ind_coflow:, self.m-3]
+        Y_CO2_new[ind_coflow:, self.m-1] = Y_CO2_new[ind_coflow:, self.m-3]
+        Y_H2O_new[ind_coflow:, self.m-1] = Y_H2O_new[ind_coflow:, self.m-3]
+        Y_N2_new[ind_coflow:, self.m-1] = Y_N2_new[ind_coflow:, self.m-3]
+        Y_CH4_new[ind_coflow:, self.m-2] = Y_CH4_new[ind_coflow:, self.m-3]
+        Y_O2_new[ind_coflow:, self.m-2] = Y_O2_new[ind_coflow:, self.m-3]
+        Y_CO2_new[ind_coflow:, self.m-2] = Y_CO2_new[ind_coflow:, self.m-3]
+        Y_H2O_new[ind_coflow:, self.m-2] = Y_H2O_new[ind_coflow:, self.m-3]
+        Y_N2_new[ind_coflow:, self.m-2] = Y_N2_new[ind_coflow:, self.m-3]
         
-        # --- Right boundary (outlet, i=n-1) - Extrapolation ---
-        Y_CH4_new[self.n-1, 1:self.m-1] = Y_CH4_new[self.n-2, 1:self.m-1]
-        Y_O2_new[self.n-1, 1:self.m-1] = Y_O2_new[self.n-2, 1:self.m-1]
-        Y_CO2_new[self.n-1, 1:self.m-1] = Y_CO2_new[self.n-2, 1:self.m-1]
-        Y_H2O_new[self.n-1, 1:self.m-1] = Y_H2O_new[self.n-2, 1:self.m-1]
-        Y_N2_new[self.n-1, 1:self.m-1] = Y_N2_new[self.n-2, 1:self.m-1]
+        # --- Right boundary (outlet, i=n-1,n-2) - Extrapolation ---
+        Y_CH4_new[self.n-1, 2:self.m-2] = Y_CH4_new[self.n-3, 2:self.m-2]
+        Y_O2_new[self.n-1, 2:self.m-2] = Y_O2_new[self.n-3, 2:self.m-2]
+        Y_CO2_new[self.n-1, 2:self.m-2] = Y_CO2_new[self.n-3, 2:self.m-2]
+        Y_H2O_new[self.n-1, 2:self.m-2] = Y_H2O_new[self.n-3, 2:self.m-2]
+        Y_N2_new[self.n-1, 2:self.m-2] = Y_N2_new[self.n-3, 2:self.m-2]
+        Y_CH4_new[self.n-2, 2:self.m-2] = Y_CH4_new[self.n-3, 2:self.m-2]
+        Y_O2_new[self.n-2, 2:self.m-2] = Y_O2_new[self.n-3, 2:self.m-2]
+        Y_CO2_new[self.n-2, 2:self.m-2] = Y_CO2_new[self.n-3, 2:self.m-2]
+        Y_H2O_new[self.n-2, 2:self.m-2] = Y_H2O_new[self.n-3, 2:self.m-2]
+        Y_N2_new[self.n-2, 2:self.m-2] = Y_N2_new[self.n-3, 2:self.m-2]
 
 
     # Compute RHS for one species (vectorisé)
     def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
-        i = slice(1, -1); j = slice(1, -1)
-        u_loc = u[i, j]; v_loc = v[i, j]; phi_loc = phi[i, j]
+        # Use interior excluding two layers to allow 4th-order 5-point stencil
+        i = slice(2, -2); j = slice(2, -2)
+        phi_loc = phi[i, j]
+        # shifts in x
+        phi_m2_x = phi[:-4, j]
+        phi_m1_x = phi[1:-3, j]
+        phi_p1_x = phi[3:-1, j]
+        phi_p2_x = phi[4:, j]
+        # shifts in y
+        phi_m2_y = phi[i, :-4]
+        phi_m1_y = phi[i, 1:-3]
+        phi_p1_y = phi[i, 3:-1]
+        phi_p2_y = phi[i, 4:]
+
+        # advective (upwind) using one-cell offsets (kept compatible with interior slice)
+        u_loc = u[i, j]; v_loc = v[i, j]
         u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
-        adv_x = (u_pos * (phi_loc - phi[:-2, j]) * self.inv_dx +
-                 u_neg * (phi[2:, j] - phi_loc) * self.inv_dx)
+        adv_x = (u_pos * (phi_loc - phi_m1_x) * self.inv_dx +
+                 u_neg * (phi_p1_x - phi_loc) * self.inv_dx)
         v_pos = np.maximum(v_loc, 0); v_neg = np.minimum(v_loc, 0)
-        adv_y = (v_pos * (phi_loc - phi[i, :-2]) * self.inv_dy +
-                 v_neg * (phi[i, 2:] - phi_loc) * self.inv_dy)
-        diff_x = (phi[2:, j] - 2*phi_loc + phi[:-2, j]) * self.inv_dx**2
-        diff_y = (phi[i, 2:] - 2*phi_loc + phi[i, :-2]) * self.inv_dy**2
+        adv_y = (v_pos * (phi_loc - phi_m1_y) * self.inv_dy +
+                 v_neg * (phi_p1_y - phi_loc) * self.inv_dy)
+
+        # 4th-order central approximation of second derivative (5-point stencil)
+        diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * self.inv_dx**2 / 12.0
+        diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * self.inv_dy**2 / 12.0
+
         diff = diffusion_coef * (diff_x + diff_y)
         src = source[i, j] if source is not None else 0.0
         return -adv_x - adv_y + diff + src
@@ -199,7 +255,7 @@ class ChemistryManager:
         # k2
         Y_k2 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
-            Y_k2[name][1:-1, 1:-1] = Y[name][1:-1, 1:-1] + 0.5 * dt * k1[name]
+            Y_k2[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k1[name]
         # apply BCs on temporary fields
         self.chemistry_boundaries(Y_k2['CH4'], Y_k2['O2'], Y_k2['CO2'], Y_k2['H2O'], Y_k2['N2'], ind_inlet, ind_coflow)
         k2 = compute_all_k(Y_k2)
@@ -207,20 +263,20 @@ class ChemistryManager:
         # k3
         Y_k3 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
-            Y_k3[name][1:-1, 1:-1] = Y[name][1:-1, 1:-1] + 0.5 * dt * k2[name]
+            Y_k3[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k2[name]
         self.chemistry_boundaries(Y_k3['CH4'], Y_k3['O2'], Y_k3['CO2'], Y_k3['H2O'], Y_k3['N2'], ind_inlet, ind_coflow)
         k3 = compute_all_k(Y_k3)
 
         # k4
         Y_k4 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
-            Y_k4[name][1:-1, 1:-1] = Y[name][1:-1, 1:-1] + dt * k3[name]
+            Y_k4[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + dt * k3[name]
         self.chemistry_boundaries(Y_k4['CH4'], Y_k4['O2'], Y_k4['CO2'], Y_k4['H2O'], Y_k4['N2'], ind_inlet, ind_coflow)
         k4 = compute_all_k(Y_k4)
 
-        # combine to final Y_new
+        # combine to final Y_new (interior 4th-order region)
         for name in Y:
-            Y[name][1:-1, 1:-1] = (Y[name][1:-1, 1:-1] +
+            Y[name][2:-2, 2:-2] = (Y[name][2:-2, 2:-2] +
                                    dt/6.0 * (k1[name] + 2.0*k2[name] + 2.0*k3[name] + k4[name]))
 
         # enforce small-value clipping and BCs

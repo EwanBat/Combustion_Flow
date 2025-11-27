@@ -12,7 +12,7 @@ def main():
     viscosity = const.nu  # Dynamic viscosity
 
     # Initialize velocity field (example: uniform flow in x-direction)
-    n, m = 50, 50
+    n, m = 75,75
     
     # Create Fluid object
     u_initial = np.zeros((n, m))  # m/s

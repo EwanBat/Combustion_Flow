@@ -95,12 +95,12 @@ class System:
         # === Temperature field initialization === Circular heated rod in center
 
         self.rode = 5e-4 # Width of the heating rode (m)
-        self.T_rode = 1000
+        self.T_rode = 1000.0  # Temperature of the heated rod (K)
         self.T = np.ones((self.n, self.m)) * 300        # Temperature field (K) with heated rod of size self.rode centered in domain
         x = np.linspace(0.0, self.Lx, self.n)
         y = np.linspace(0.0, self.Ly, self.m)
         X, Y = np.meshgrid(x, y, indexing='ij')
-        mask = np.abs(Y - self.Ly/2) <= self.rode / 2
+        mask = np.abs(Y - self.Ly/2) <= self.rode / 3
         self.T[mask] = self.T_rode
     
     
@@ -146,30 +146,38 @@ class System:
 
     def temperature_boundary(self, T_new):
         # --- Left boundary (i=0) - Neumann (zero gradient) ---
-        i = 0
-        for j in range(1, self.m-1):
+        i = 1
+        for j in range(2, self.m-2):
             T_new[i, j] = T_new[i+1, j]
+        T_new[0, 1:-2] = T_new[1, 1:-2]
         
         # --- CH4 inlet (slot region, bottom wall j=0) ---
         T_new[:self.ind_inlet, 0] = self.Tslot
+        T_new[:self.ind_inlet, 1] = self.Tslot
 
         # --- O2+N2 inlet (slot region, top wall j=m-1) ---
         T_new[:self.ind_inlet, self.m-1] = self.Tslot
+        T_new[:self.ind_inlet, self.m-2] = self.Tslot
 
         # --- N2 coflow inlet (coflow region, bottom wall j=0) ---
         T_new[self.ind_inlet:self.ind_coflow, 0] = self.Tcoflow
+        T_new[self.ind_inlet:self.ind_coflow, 1] = self.Tcoflow
 
         # --- N2 coflow inlet (coflow region, top wall j=m-1) ---
         T_new[self.ind_inlet:self.ind_coflow, self.m-1] = self.Tcoflow
+        T_new[self.ind_inlet:self.ind_coflow, self.m-2] = self.Tcoflow
 
         # --- Lower wall (outlet region, j=0) - Neumann ---
-        T_new[self.ind_coflow:, 0] = T_new[self.ind_coflow:, 1]
+        T_new[self.ind_coflow:, 1] = T_new[self.ind_coflow:, 2]
+        T_new[self.ind_coflow:, 0] = T_new[self.ind_coflow:, 2]
 
         # --- Upper wall (outlet region, j=m-1) - Neumann ---
-        T_new[self.ind_coflow:, self.m-1] = T_new[self.ind_coflow:, self.m-2]
+        T_new[self.ind_coflow:, self.m-2] = T_new[self.ind_coflow:, self.m-3]
+        T_new[self.ind_coflow:, self.m-1] = T_new[self.ind_coflow:, self.m-3]
 
         # --- Right boundary (outlet, i=n-1) - Extrapolation ---
-        T_new[self.n-1, 1:self.m-1] = T_new[self.n-2, 1:self.m-1]
+        T_new[self.n-2, 2:self.m-2] = T_new[self.n-3, 2:self.m-2]
+        T_new[self.n-1, 2:self.m-2] = T_new[self.n-3, 2:self.m-2]
 
     # def update_temperature(self, u_new, v_new, heat, dt, i_int = slice(1, -1), j_int = slice(1, -1)):
     #     T_new = np.copy(self.T)
@@ -195,57 +203,67 @@ class System:
         
     #     self.T = T_new
     
-    def compute_species_rhs(self, phi, u, v, inv_dx, inv_dy, diffusion_coef, source):
-            i = slice(1, -1); j = slice(1, -1)
-            u_loc = u[i, j]; v_loc = v[i, j]; phi_loc = phi[i, j]
+    def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
+            # Use interior excluding two layers to allow 4th-order 5-point stencil
+        i = slice(2, -2); j = slice(2, -2)
+        phi_loc = phi[i, j]
+        # shifts in x
+        phi_m2_x = phi[:-4, j]
+        phi_m1_x = phi[1:-3, j]
+        phi_p1_x = phi[3:-1, j]
+        phi_p2_x = phi[4:, j]
+        # shifts in y
+        phi_m2_y = phi[i, :-4]
+        phi_m1_y = phi[i, 1:-3]
+        phi_p1_y = phi[i, 3:-1]
+        phi_p2_y = phi[i, 4:]
 
-            # advection x
-            u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
-            adv_x = (u_pos * (phi_loc - phi[:-2, j]) * inv_dx +
-                    u_neg * (phi[2:, j] - phi_loc) * inv_dx)
+        # advective (upwind) using one-cell offsets (kept compatible with interior slice)
+        u_loc = u[i, j]; v_loc = v[i, j]
+        u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
+        adv_x = (u_pos * (phi_loc - phi_m1_x) * self.inv_dx +
+                 u_neg * (phi_p1_x - phi_loc) * self.inv_dx)
+        v_pos = np.maximum(v_loc, 0); v_neg = np.minimum(v_loc, 0)
+        adv_y = (v_pos * (phi_loc - phi_m1_y) * self.inv_dy +
+                 v_neg * (phi_p1_y - phi_loc) * self.inv_dy)
 
-            # advection y
-            v_pos = np.maximum(v_loc, 0); v_neg = np.minimum(v_loc, 0)
-            adv_y = (v_pos * (phi_loc - phi[i, :-2]) * inv_dy +
-                    v_neg * (phi[i, 2:] - phi_loc) * inv_dy)
+        # 4th-order central approximation of second derivative (5-point stencil)
+        diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * self.inv_dx**2 / 12.0
+        diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * self.inv_dy**2 / 12.0
 
-            # diffusion
-            diff_x = (phi[2:, j] - 2*phi_loc + phi[:-2, j]) * inv_dx**2
-            diff_y = (phi[i, 2:] - 2*phi_loc + phi[i, :-2]) * inv_dy**2
-            diff = diffusion_coef * (diff_x + diff_y)
-
-            src = source[i, j] if source is not None else 0.0
-            return -adv_x - adv_y + diff + src
+        diff = diffusion_coef * (diff_x + diff_y)
+        src = source[i, j] if source is not None else 0.0
+        return -adv_x - adv_y + diff + src
 
     def rk4_advance_temperature(self, u, v, heat, dt):
         T = np.copy(self.T)
-
+        i_int = slice(2, -2); j_int = slice(2, -2)
         T_source = heat / (const.rho * const.c_p)
 
         def compute_T_k(T_field):
-            return self.compute_species_rhs(T_field, u, v, self.inv_dx, self.inv_dy, const.nu, T_source)
+            return self.compute_species_rhs(T_field, u, v, const.nu, T_source)
 
         k1 = compute_T_k(T)
-        T2 = np.copy(T); T2[1:-1,1:-1] = T[1:-1,1:-1] + 0.5*dt*k1
+        T2 = np.copy(T); T2[i_int,j_int] = T[i_int,j_int] + 0.5*dt*k1
         self.temperature_boundary(T2)
         k2 = compute_T_k(T2)
 
-        T3 = np.copy(T); T3[1:-1,1:-1] = T[1:-1,1:-1] + 0.5*dt*k2
+        T3 = np.copy(T); T3[i_int,j_int] = T[i_int,j_int] + 0.5*dt*k2
         self.temperature_boundary(T3)
         k3 = compute_T_k(T3)
 
-        T4 = np.copy(T); T4[1:-1,1:-1] = T[1:-1,1:-1] + dt*k3
+        T4 = np.copy(T); T4[i_int,j_int] = T[i_int,j_int] + dt*k3
         self.temperature_boundary(T4)
         k4 = compute_T_k(T4)
 
-        T[1:-1,1:-1] = T[1:-1,1:-1] + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
+        T[i_int,j_int] = T[i_int,j_int] + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
 
         # keep heated rod as before for initial transient
         if self.current_time <= self.Lx / self.Uslot:
             x = np.linspace(0.0, self.Lx, self.n)
             y = np.linspace(0.0, self.Ly, self.m)
             X, Y = np.meshgrid(x, y, indexing='ij')
-            mask = np.abs(Y - self.Ly/2) <= self.rode / 2
+            mask = np.abs(Y - self.Ly/2) <= self.rode / 3
             T[mask] = self.T_rode
 
         self.temperature_boundary(T)
