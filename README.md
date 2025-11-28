@@ -116,7 +116,7 @@ The code generates:
 
 ### Example Results
 
-![Species Concentrations](concentrations.png)
+![Species Concentrations](concentrations_readme.png)
 *Species concentration profiles showing the distribution of reactants and products in the computational domain.*
 
 

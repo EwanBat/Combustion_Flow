@@ -20,7 +20,7 @@ ENV/
 *.mp4
 *.avi
 *.png
-!concentrations.png
+!concentrations_readme.png
 *.jpg
 *.pdf
 
