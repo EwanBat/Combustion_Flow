@@ -50,12 +50,13 @@ def main():
     total_time = 6e-3
     system = System(dt_data=dt_data, total_time=total_time, n=n, m=m, fluid=fluid, ChemicalManager=chemistry_manager)
     system.print_caracteristics()
-    system.run()
+    parallel = input("Run simulation with Numba parallelization? (y/n): ").strip().lower() == 'y'
+    system.run(parallel=parallel)
     system.plot_concentration(save = True)
     system.plot_temperature(save = True)
     system.plot_velocity_magnitude(save = True)
-    system.animation_concentration(species="CO2", save=True)
-    system.animation_temperature(save=True)
+    # system.animation_concentration(species="CO2", save=True)
+    # system.animation_temperature(save=True)
 
 if __name__ == "__main__":
     main()

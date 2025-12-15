@@ -7,6 +7,7 @@ from fluid import Fluid
 import constant as const
 import os
 import time
+from numba import njit, prange
 
 
 class System:
@@ -361,7 +362,9 @@ class System:
         # Advance time
         self.current_time += self.dt
 
-    def run(self):
+    # ==================== Main run loop ====================
+
+    def run(self, parallel=False):
         """
         Run the simulation until total_time is reached.
         
@@ -371,8 +374,13 @@ class System:
         time_data = 0.0
         count_steps = 0
         
+        if parallel:
+            function_step = self.step_numba
+        else:
+            function_step = self.step
+
         while self.current_time < self.total_time:
-            self.step()
+            function_step()
             progress = self.current_time / self.total_time * 100
             print(f"\rSimulation progress: {progress:.2f}%", end="")
             
@@ -499,8 +507,7 @@ class System:
             plt.savefig(filename, dpi=300, bbox_inches='tight')
         
         plt.show()
-
-    
+ 
     def plot_temperature(self, load_from="data//simulation_data", save=False, filename="temperature.png"):
         """
         Plot temperature field distribution.
@@ -534,7 +541,6 @@ class System:
         
         plt.show()
 
-    
     def plot_velocity_magnitude(self, load_from="data//simulation_data", save=False, filename="velocity_magnitude.png"):
         """
         Plot velocity magnitude with vector field overlay.
@@ -691,3 +697,244 @@ class System:
 
         print("Temperature animation complete.")
         plt.show()
+
+    # ==================== Numba-accelerated versions ====================
+
+    def temperature_boundary_numba(self, T_new):
+        """Apply temperature boundary conditions using numba for parallel execution."""
+        _apply_temperature_boundaries_numba(
+            T_new, self.n, self.m, 
+            self.ind_inlet, self.ind_coflow,
+            self.Tslot, self.Tcoflow
+        )
+
+    def compute_species_rhs_numba(self, phi, u, v, diffusion_coef, source):
+        """Compute RHS for species using numba for parallel execution."""
+        rhs = np.zeros((self.n-4, self.m-4))
+        _compute_species_rhs_numba(
+            phi, u, v, diffusion_coef, 
+            source if source is not None else np.zeros_like(phi),
+            self.inv_dx, self.inv_dy, rhs
+        )
+        return rhs
+
+    def rk4_advance_temperature_numba(self, u, v, heat, dt):
+        """Advance temperature using RK4 with numba-accelerated computations."""
+        T = np.copy(self.T)
+        i_int = slice(2, -2); j_int = slice(2, -2)
+        T_source = heat / (const.rho * const.c_p)
+
+        def compute_T_k(T_field):
+            return self.compute_species_rhs_numba(T_field, u, v, const.nu, T_source)
+
+        k1 = compute_T_k(T)
+        T2 = np.copy(T); T2[i_int,j_int] = T[i_int,j_int] + 0.5*dt*k1
+        self.temperature_boundary_numba(T2)
+        k2 = compute_T_k(T2)
+
+        T3 = np.copy(T); T3[i_int,j_int] = T[i_int,j_int] + 0.5*dt*k2
+        self.temperature_boundary_numba(T3)
+        k3 = compute_T_k(T3)
+
+        T4 = np.copy(T); T4[i_int,j_int] = T[i_int,j_int] + dt*k3
+        self.temperature_boundary_numba(T4)
+        k4 = compute_T_k(T4)
+
+        T[i_int,j_int] = T[i_int,j_int] + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
+
+        # keep heated rod as before for initial transient
+        if self.current_time <= self.Lx / self.Uslot:
+            x = np.linspace(0.0, self.Lx, self.n)
+            y = np.linspace(0.0, self.Ly, self.m)
+            X, Y = np.meshgrid(x, y, indexing='ij')
+            mask = np.abs(Y - self.Ly/2) <= self.rode / 3
+            T[mask] = self.T_rode
+
+        self.temperature_boundary_numba(T)
+        self.T = T
+
+    def step_numba(self):
+        """
+        Perform one time step of the simulation using numba-accelerated methods.
+        
+        Uses fractional step method (projection method):
+        1. Predict velocities without pressure (u*, v*)
+        2. Solve pressure Poisson equation
+        3. Correct velocities to satisfy incompressibility
+        4. Update scalars (T, species mass fractions)
+        
+        This version uses numba-compiled functions for improved performance.
+        """
+        # === STEP 1: PREDICT VELOCITIES (u*, v*) ===
+        
+        # Update interior velocity components using advection-diffusion (numba version)
+        u_star, v_star = self.fluid.adv_diff_interior_numba(
+            self.inv_dx, self.inv_dy)
+    
+        # --- Left boundary (i=0) special handling ---
+        i = 0
+        for j in range(1, self.m-1):
+            v_loc = self.fluid.v[i, j]
+            u_star[i, j] = 0  # No-slip on left boundary
+            
+            # Upwind advection for v-component
+            if v_loc >= 0:
+                adv_v_y = v_loc * (v_loc - self.fluid.v[i, j-1]) / self.dy
+            else:
+                adv_v_y = v_loc * (self.fluid.v[i, j+1] - v_loc) / self.dy
+            
+            # Asymmetric diffusion (one-sided in x-direction)
+            diffusion_v = self.fluid.diffusivity * (
+                (2*self.fluid.v[i+1, j] - 2*v_loc) / self.dx**2 +
+                (self.fluid.v[i, j+1] - 2*v_loc + self.fluid.v[i, j-1]) / self.dy**2
+            )
+            
+            v_star[i, j] = v_loc + self.dt * (-adv_v_y + diffusion_v)
+
+        self.fluid.apply_velocity_bcs(u_star, v_star, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+
+        # === STEP 2: SOLVE PRESSURE POISSON EQUATION (numba version) ===
+        self.fluid.SOR_pressure_solver_numba(u_star, v_star)
+        
+        # === STEP 3: CORRECT VELOCITIES WITH PRESSURE GRADIENT (numba version) ===
+        u_new, v_new = self.fluid.correction_velocity_numba(u_star, v_star)
+        self.fluid.apply_velocity_bcs(u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+
+        # === STEP 4: UPDATE SCALARS (TEMPERATURE, SPECIES) ===
+        # Initialiser les taux de réaction (numba version)
+        self.ChemicalManager.update_reaction_rates_numba(self.T)
+        heat = self.ChemicalManager.heat_release_numba()
+
+        # Calcul du pas de temps chimique
+        with np.errstate(divide='ignore', invalid='ignore'):
+            tau = (const.c_p * const.rho * self.T) / (np.abs(heat) + 1e-30)
+        
+        valid = tau[np.isfinite(tau) & (tau > 0)]
+        if valid.size > 0:
+            chemical_dt = 0.1 * np.min(valid)
+            chemical_dt = np.clip(chemical_dt, 1e-10, self.dt)
+        else:
+            chemical_dt = self.dt
+
+        # Boucle de sous-pas avec mise à jour des taux (numba versions)
+        if chemical_dt < self.dt and chemical_dt > 0:
+            chemical_time = 0.0
+            n_substeps = 0
+            max_substeps = 1000  # Sécurité contre boucles infinies
+            
+            while chemical_time < self.dt and n_substeps < max_substeps:
+                # IMPORTANT: Recalculer les taux à chaque sous-pas
+                self.ChemicalManager.update_reaction_rates_numba(self.T)
+                
+                self.ChemicalManager.rk4_advance_species_numba(u_new, v_new, chemical_dt, self.ind_inlet, self.ind_coflow)
+                chemical_time += chemical_dt
+                n_substeps += 1
+                
+                # Optionnel: ajuster le dernier pas pour arriver exactement à self.dt
+                if chemical_time + chemical_dt > self.dt:
+                    chemical_dt = self.dt - chemical_time
+        else:
+            self.ChemicalManager.rk4_advance_species_numba(u_new, v_new, self.dt, self.ind_inlet, self.ind_coflow)
+        
+        # Mettre à jour la température avec les nouveaux taux (numba versions)
+        self.ChemicalManager.update_reaction_rates_numba(self.T)
+        heat = self.ChemicalManager.heat_release_numba()
+        self.rk4_advance_temperature_numba(u_new, v_new, heat, self.dt)
+        
+        self.fluid.u = u_new
+        self.fluid.v = v_new
+        
+        # Advance time
+        self.current_time += self.dt
+
+# ==================== Numba-compiled functions ====================
+
+@njit(parallel=True)
+def _apply_temperature_boundaries_numba(T_new, n, m, ind_inlet, ind_coflow, Tslot, Tcoflow):
+    """Numba-compiled function to apply temperature boundary conditions in parallel."""
+    # Left boundary (i=0,1) - Neumann
+    for j in prange(2, m-2):
+        T_new[1, j] = T_new[2, j]
+        T_new[0, j] = T_new[1, j]
+    
+    # CH4 inlet (slot region, bottom wall j=0,1)
+    for i in prange(ind_inlet):
+        T_new[i, 0] = Tslot
+        T_new[i, 1] = Tslot
+    
+    # O2+N2 inlet (slot region, top wall)
+    for i in prange(ind_inlet):
+        T_new[i, m-1] = Tslot
+        T_new[i, m-2] = Tslot
+    
+    # N2 coflow inlet (coflow region, bottom wall)
+    for i in prange(ind_inlet, ind_coflow):
+        T_new[i, 0] = Tcoflow
+        T_new[i, 1] = Tcoflow
+    
+    # N2 coflow inlet (coflow region, top wall)
+    for i in prange(ind_inlet, ind_coflow):
+        T_new[i, m-1] = Tcoflow
+        T_new[i, m-2] = Tcoflow
+    
+    # Lower wall (outlet region) - Neumann
+    for i in prange(ind_coflow, n):
+        T_new[i, 1] = T_new[i, 2]
+        T_new[i, 0] = T_new[i, 2]
+    
+    # Upper wall (outlet region) - Neumann
+    for i in prange(ind_coflow, n):
+        T_new[i, m-2] = T_new[i, m-3]
+        T_new[i, m-1] = T_new[i, m-3]
+    
+    # Right boundary (outlet) - Extrapolation
+    for j in prange(2, m-2):
+        T_new[n-2, j] = T_new[n-3, j]
+        T_new[n-1, j] = T_new[n-3, j]
+
+
+@njit(parallel=True)
+def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy, rhs):
+    """Numba-compiled function to compute species RHS in parallel."""
+    n_interior = rhs.shape[0]
+    m_interior = rhs.shape[1]
+    inv_dx2 = inv_dx * inv_dx
+    inv_dy2 = inv_dy * inv_dy
+    
+    for i in prange(n_interior):
+        for j in range(m_interior):
+            ii = i + 2  # offset to actual grid position
+            jj = j + 2
+            
+            phi_loc = phi[ii, jj]
+            phi_m2_x = phi[ii-2, jj]
+            phi_m1_x = phi[ii-1, jj]
+            phi_p1_x = phi[ii+1, jj]
+            phi_p2_x = phi[ii+2, jj]
+            phi_m2_y = phi[ii, jj-2]
+            phi_m1_y = phi[ii, jj-1]
+            phi_p1_y = phi[ii, jj+1]
+            phi_p2_y = phi[ii, jj+2]
+            
+            u_loc = u[ii, jj]
+            v_loc = v[ii, jj]
+            
+            # Upwind advection
+            if u_loc > 0:
+                adv_x = u_loc * (phi_loc - phi_m1_x) * inv_dx
+            else:
+                adv_x = u_loc * (phi_p1_x - phi_loc) * inv_dx
+            
+            if v_loc > 0:
+                adv_y = v_loc * (phi_loc - phi_m1_y) * inv_dy
+            else:
+                adv_y = v_loc * (phi_p1_y - phi_loc) * inv_dy
+            
+            # 4th-order central diffusion
+            diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * inv_dx2 / 12.0
+            diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * inv_dy2 / 12.0
+            
+            diff = diffusion_coef * (diff_x + diff_y)
+            src = source[ii, jj]
+            
+            rhs[i, j] = -adv_x - adv_y + diff + src

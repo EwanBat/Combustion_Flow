@@ -1,5 +1,6 @@
 import numpy as np
 import constant as const
+from numba import njit, prange
 
 class Chemistry:
     """
@@ -202,7 +203,6 @@ class ChemistryManager:
         Y_H2O_new[self.n-2, 2:self.m-2] = Y_H2O_new[self.n-3, 2:self.m-2]
         Y_N2_new[self.n-2, 2:self.m-2] = Y_N2_new[self.n-3, 2:self.m-2]
 
-
     # Compute RHS for one species (vectorisé)
     def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
         # Use interior excluding two layers to allow 4th-order 5-point stencil
@@ -284,3 +284,327 @@ class ChemistryManager:
         for name in Y:
             Y[name][Y[name] < 1e-15] = 0.0
             self.chemistries[name].Y = Y[name]
+
+    # ==================== Numba-accelerated versions ====================
+
+    def chemistry_boundaries_numba(self, Y_CH4_new, Y_O2_new, Y_CO2_new, Y_H2O_new, Y_N2_new, ind_inlet, ind_coflow):
+        """Apply boundary conditions using numba for parallel execution."""
+        _apply_chemistry_boundaries_numba(
+            Y_CH4_new, Y_O2_new, Y_CO2_new, Y_H2O_new, Y_N2_new,
+            ind_inlet, ind_coflow, self.n, self.m
+        )
+
+    def compute_species_rhs_numba(self, phi, u, v, diffusion_coef, source):
+        """Compute RHS for one species using numba for parallel execution."""
+        rhs = np.zeros((self.n-4, self.m-4))
+        _compute_species_rhs_numba(
+            phi, u, v, diffusion_coef, source if source is not None else np.zeros_like(phi),
+            self.inv_dx, self.inv_dy, rhs
+        )
+        return rhs
+
+    def update_reaction_rates_numba(self, T_field):
+        """Update reaction rates using numba-accelerated computation."""
+        # Convertir les dictionnaires en arrays pour numba
+        stoich_array = np.array([
+            const.stoichiometric_coefficients['CH4'],
+            const.stoichiometric_coefficients['O2'],
+            const.stoichiometric_coefficients['CO2'],
+            const.stoichiometric_coefficients['H2O']
+        ])
+        
+        molar_mass_array = np.array([
+            const.molar_mass['CH4'],
+            const.molar_mass['O2'],
+            const.molar_mass['CO2'],
+            const.molar_mass['H2O']
+        ])
+        
+        k_CH4, k_O2, k_CO2, k_H2O = _compute_reaction_rates_numba(
+            T_field,
+            self.chemistries['O2'].Y,
+            self.chemistries['CH4'].Y,
+            self.chemistries['O2'].molar_mass,
+            self.chemistries['CH4'].molar_mass,
+            const.T_A,
+            const.A,
+            const.rho,
+            stoich_array,
+            molar_mass_array
+        )
+        
+        self.reaction_rates = {
+            'CH4': k_CH4,
+            'O2': k_O2,
+            'CO2': k_CO2,
+            'H2O': k_H2O,
+            'N2': np.zeros_like(k_CH4)  # N2 est inerte
+        }
+        
+    def heat_release_numba(self):
+        """Compute volumetric heat release using numba for parallel execution."""
+        rates_array = np.array([self.reaction_rates[name] for name in self.chemistries.keys()])
+        delta_h_array = np.array([const.enthalpy_of_formation.get(name, 0) for name in self.chemistries.keys()])
+        molar_mass_array = np.array([self.chemistries[name].molar_mass for name in self.chemistries.keys()])
+        
+        omega_T = _compute_heat_release_numba(rates_array, delta_h_array, molar_mass_array)
+        return omega_T
+
+
+    def rk4_advance_species_numba(self, u, v, dt, ind_inlet, ind_coflow):
+        """Advance species using RK4 with numba-accelerated computations."""
+        # prepare arrays
+        Y = {name: np.copy(chem.Y) for name, chem in self.chemistries.items()}
+        sources = {name: (self.reaction_rates[name] / const.rho) for name in self.chemistries.keys()}
+        diffusivities = {name: chem.diffusivity for name, chem in self.chemistries.items()}
+
+        # helper to compute all k given current full-field arrays
+        def compute_all_k(Y_fields):
+            ks = {}
+            for name, chem in self.chemistries.items():
+                ks[name] = self.compute_species_rhs_numba(Y_fields[name], u, v, diffusivities[name], sources[name])
+            return ks
+
+        # k1
+        k1 = compute_all_k(Y)
+
+        # k2
+        Y_k2 = {name: np.copy(Y[name]) for name in Y}
+        for name in Y:
+            Y_k2[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k1[name]
+        self.chemistry_boundaries_numba(Y_k2['CH4'], Y_k2['O2'], Y_k2['CO2'], Y_k2['H2O'], Y_k2['N2'], ind_inlet, ind_coflow)
+        k2 = compute_all_k(Y_k2)
+
+        # k3
+        Y_k3 = {name: np.copy(Y[name]) for name in Y}
+        for name in Y:
+            Y_k3[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k2[name]
+        self.chemistry_boundaries_numba(Y_k3['CH4'], Y_k3['O2'], Y_k3['CO2'], Y_k3['H2O'], Y_k3['N2'], ind_inlet, ind_coflow)
+        k3 = compute_all_k(Y_k3)
+
+        # k4
+        Y_k4 = {name: np.copy(Y[name]) for name in Y}
+        for name in Y:
+            Y_k4[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + dt * k3[name]
+        self.chemistry_boundaries_numba(Y_k4['CH4'], Y_k4['O2'], Y_k4['CO2'], Y_k4['H2O'], Y_k4['N2'], ind_inlet, ind_coflow)
+        k4 = compute_all_k(Y_k4)
+
+        # combine to final Y_new
+        for name in Y:
+            Y[name][2:-2, 2:-2] = (Y[name][2:-2, 2:-2] +
+                                   dt/6.0 * (k1[name] + 2.0*k2[name] + 2.0*k3[name] + k4[name]))
+
+        # enforce small-value clipping and BCs
+        self.chemistry_boundaries_numba(Y['CH4'], Y['O2'], Y['CO2'], Y['H2O'], Y['N2'], ind_inlet, ind_coflow)
+        for name in Y:
+            Y[name][Y[name] < 1e-15] = 0.0
+            self.chemistries[name].Y = Y[name]
+
+
+# ==================== Numba-compiled functions ====================
+
+@njit(parallel=True)
+def _compute_reaction_rates_numba(T_field, Y_O2, Y_CH4, M_O2, M_CH4, T_A, A, rho, stoich_coef, molar_masses):
+    """
+    Compute reaction rates for all species using Arrhenius kinetics.
+    
+    Args:
+        T_field: Temperature field
+        Y_O2, Y_CH4: Mass fraction fields
+        M_O2, M_CH4: Molar masses
+        T_A: Activation temperature
+        A: Pre-exponential factor
+        rho: Density
+        stoich_coef: Array [CH4, O2, CO2, H2O] stoichiometric coefficients
+        molar_masses: Array [CH4, O2, CO2, H2O] molar masses
+    
+    Returns:
+        Tuple of (k_CH4, k_O2, k_CO2, k_H2O)
+    """
+    n, m = T_field.shape
+    k_CH4 = np.zeros((n, m))
+    k_O2 = np.zeros((n, m))
+    k_CO2 = np.zeros((n, m))
+    k_H2O = np.zeros((n, m))
+    
+    for i in prange(n):
+        for j in range(m):
+            T = T_field[i, j]
+            C_O2 = (Y_O2[i, j] / M_O2) * rho
+            C_CH4 = (Y_CH4[i, j] / M_CH4) / rho
+            
+            k = A * np.exp(-T_A / T) * (C_CH4) * (C_O2**2)
+            
+            k_CH4[i, j] = stoich_coef[0] * molar_masses[0] * k
+            k_O2[i, j] = stoich_coef[1] * molar_masses[1] * k
+            k_CO2[i, j] = stoich_coef[2] * molar_masses[2] * k
+            k_H2O[i, j] = stoich_coef[3] * molar_masses[3] * k
+    
+    return (k_CH4, k_O2, k_CO2, k_H2O)
+
+
+@njit(parallel=True)
+def _compute_heat_release_numba(rates_array, delta_h_array, molar_mass_array):
+    """Numba-compiled function to compute heat release in parallel."""
+    n_species = len(rates_array)
+    omega_T = np.zeros_like(rates_array[0])
+    
+    for i in prange(n_species):
+        omega_T -= rates_array[i] * delta_h_array[i] / molar_mass_array[i]
+    
+    return omega_T
+
+
+@njit(parallel=True)
+def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet, ind_coflow, n, m):
+    """Numba-compiled function to apply boundary conditions in parallel."""
+    # Left boundary (i=0,1) - Neumann
+    for j in prange(2, m-2):
+        Y_CH4[0, j] = Y_CH4[2, j]
+        Y_O2[0, j] = Y_O2[2, j]
+        Y_CO2[0, j] = Y_CO2[2, j]
+        Y_H2O[0, j] = Y_H2O[2, j]
+        Y_N2[0, j] = Y_N2[2, j]
+        Y_CH4[1, j] = Y_CH4[2, j]
+        Y_O2[1, j] = Y_O2[2, j]
+        Y_CO2[1, j] = Y_CO2[2, j]
+        Y_H2O[1, j] = Y_H2O[2, j]
+        Y_N2[1, j] = Y_N2[2, j]
+    
+    # CH4 inlet (slot region, bottom wall j=0,1)
+    for i in prange(ind_inlet):
+        Y_CH4[i, 0] = 1.0
+        Y_O2[i, 0] = 0.0
+        Y_CO2[i, 0] = 0.0
+        Y_H2O[i, 0] = 0.0
+        Y_N2[i, 0] = 0.0
+        Y_CH4[i, 1] = 1.0
+        Y_O2[i, 1] = 0.0
+        Y_CO2[i, 1] = 0.0
+        Y_H2O[i, 1] = 0.0
+        Y_N2[i, 1] = 0.0
+    
+    # O2+N2 inlet (slot region, top wall)
+    for i in prange(ind_inlet):
+        Y_CH4[i, m-1] = 0.0
+        Y_O2[i, m-1] = 0.21
+        Y_CO2[i, m-1] = 0.0
+        Y_H2O[i, m-1] = 0.0
+        Y_N2[i, m-1] = 0.79
+        Y_CH4[i, m-2] = 0.0
+        Y_O2[i, m-2] = 0.21
+        Y_CO2[i, m-2] = 0.0
+        Y_H2O[i, m-2] = 0.0
+        Y_N2[i, m-2] = 0.79
+    
+    # N2 coflow inlet (coflow region, bottom wall)
+    for i in prange(ind_inlet, ind_coflow):
+        Y_CH4[i, 0] = 0.0
+        Y_O2[i, 0] = 0.0
+        Y_CO2[i, 0] = 0.0
+        Y_H2O[i, 0] = 0.0
+        Y_N2[i, 0] = 1.0
+        Y_CH4[i, 1] = 0.0
+        Y_O2[i, 1] = 0.0
+        Y_CO2[i, 1] = 0.0
+        Y_H2O[i, 1] = 0.0
+        Y_N2[i, 1] = 1.0
+    
+    # N2 coflow inlet (coflow region, top wall)
+    for i in prange(ind_inlet, ind_coflow):
+        Y_CH4[i, m-1] = 0.0
+        Y_O2[i, m-1] = 0.0
+        Y_CO2[i, m-1] = 0.0
+        Y_H2O[i, m-1] = 0.0
+        Y_N2[i, m-1] = 1.0
+        Y_CH4[i, m-2] = 0.0
+        Y_O2[i, m-2] = 0.0
+        Y_CO2[i, m-2] = 0.0
+        Y_H2O[i, m-2] = 0.0
+        Y_N2[i, m-2] = 1.0
+    
+    # Lower wall (outlet region) - Neumann
+    for i in prange(ind_coflow, n):
+        Y_CH4[i, 0] = Y_CH4[i, 2]
+        Y_O2[i, 0] = Y_O2[i, 2]
+        Y_CO2[i, 0] = Y_CO2[i, 2]
+        Y_H2O[i, 0] = Y_H2O[i, 2]
+        Y_N2[i, 0] = Y_N2[i, 2]
+        Y_CH4[i, 1] = Y_CH4[i, 2]
+        Y_O2[i, 1] = Y_O2[i, 2]
+        Y_CO2[i, 1] = Y_CO2[i, 2]
+        Y_H2O[i, 1] = Y_H2O[i, 2]
+        Y_N2[i, 1] = Y_N2[i, 2]
+    
+    # Upper wall (outlet region) - Neumann
+    for i in prange(ind_coflow, n):
+        Y_CH4[i, m-1] = Y_CH4[i, m-3]
+        Y_O2[i, m-1] = Y_O2[i, m-3]
+        Y_CO2[i, m-1] = Y_CO2[i, m-3]
+        Y_H2O[i, m-1] = Y_H2O[i, m-3]
+        Y_N2[i, m-1] = Y_N2[i, m-3]
+        Y_CH4[i, m-2] = Y_CH4[i, m-3]
+        Y_O2[i, m-2] = Y_O2[i, m-3]
+        Y_CO2[i, m-2] = Y_CO2[i, m-3]
+        Y_H2O[i, m-2] = Y_H2O[i, m-3]
+        Y_N2[i, m-2] = Y_N2[i, m-3]
+    
+    # Right boundary (outlet) - Extrapolation
+    for j in prange(2, m-2):
+        Y_CH4[n-1, j] = Y_CH4[n-3, j]
+        Y_O2[n-1, j] = Y_O2[n-3, j]
+        Y_CO2[n-1, j] = Y_CO2[n-3, j]
+        Y_H2O[n-1, j] = Y_H2O[n-3, j]
+        Y_N2[n-1, j] = Y_N2[n-3, j]
+        Y_CH4[n-2, j] = Y_CH4[n-3, j]
+        Y_O2[n-2, j] = Y_O2[n-3, j]
+        Y_CO2[n-2, j] = Y_CO2[n-3, j]
+        Y_H2O[n-2, j] = Y_H2O[n-3, j]
+        Y_N2[n-2, j] = Y_N2[n-3, j]
+
+
+@njit(parallel=True)
+def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy, rhs):
+    """Numba-compiled function to compute species RHS in parallel."""
+    n_interior = rhs.shape[0]
+    m_interior = rhs.shape[1]
+    inv_dx2 = inv_dx * inv_dx
+    inv_dy2 = inv_dy * inv_dy
+    
+    for i in prange(n_interior):
+        for j in range(m_interior):
+            ii = i + 2  # offset to actual grid position
+            jj = j + 2
+            
+            phi_loc = phi[ii, jj]
+            phi_m2_x = phi[ii-2, jj]
+            phi_m1_x = phi[ii-1, jj]
+            phi_p1_x = phi[ii+1, jj]
+            phi_p2_x = phi[ii+2, jj]
+            phi_m2_y = phi[ii, jj-2]
+            phi_m1_y = phi[ii, jj-1]
+            phi_p1_y = phi[ii, jj+1]
+            phi_p2_y = phi[ii, jj+2]
+            
+            u_loc = u[ii, jj]
+            v_loc = v[ii, jj]
+            
+            # Upwind advection
+            if u_loc > 0:
+                adv_x = u_loc * (phi_loc - phi_m1_x) * inv_dx
+            else:
+                adv_x = u_loc * (phi_p1_x - phi_loc) * inv_dx
+            
+            if v_loc > 0:
+                adv_y = v_loc * (phi_loc - phi_m1_y) * inv_dy
+            else:
+                adv_y = v_loc * (phi_p1_y - phi_loc) * inv_dy
+            
+            # 4th-order central diffusion
+            diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * inv_dx2 / 12.0
+            diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * inv_dy2 / 12.0
+            
+            diff = diffusion_coef * (diff_x + diff_y)
+            src = source[ii, jj]
+            
+            rhs[i, j] = -adv_x - adv_y + diff + src
