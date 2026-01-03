@@ -103,47 +103,6 @@ class System:
         X, Y = np.meshgrid(x, y, indexing='ij')
         mask = np.abs(Y - self.Ly/2) <= self.rode / 3
         self.T[mask] = self.T_rode
-    
-    
-    # def step_vectorized_interior(self, u, v, field, inv_dx, inv_dy, diffusion_coef, source=None, chemical_dt = None):
-    #     # === Define interior region (excluding boundaries) ===
-    #     i_slice = slice(1, -1)
-    #     j_slice = slice(1, -1)
-        
-    #     # Extract local field values
-    #     u_loc = u[i_slice, j_slice]
-    #     v_loc = v[i_slice, j_slice]
-    #     field_loc = field[i_slice, j_slice]
-        
-    #     # === Upwind advection in x-direction ===
-    #     # Use backward difference when u > 0, forward when u < 0
-    #     u_pos = np.maximum(u_loc, 0)
-    #     u_neg = np.minimum(u_loc, 0)
-    #     adv_x = (u_pos * (field_loc - field[:-2, j_slice]) * inv_dx + 
-    #              u_neg * (field[2:, j_slice] - field_loc) * inv_dx)
-        
-    #     # === Upwind advection in y-direction ===
-    #     v_pos = np.maximum(v_loc, 0)
-    #     v_neg = np.minimum(v_loc, 0)
-    #     adv_y = (v_pos * (field_loc - field[i_slice, :-2]) * inv_dy + 
-    #              v_neg * (field[i_slice, 2:] - field_loc) * inv_dy)
-        
-    #     # === Diffusion using central differences (5-point stencil) ===
-    #     diff_x = (field[2:, j_slice] - 2*field_loc + field[:-2, j_slice]) * inv_dx**2
-    #     diff_y = (field[i_slice, 2:] - 2*field_loc + field[i_slice, :-2]) * inv_dy**2
-    #     diff = diffusion_coef * (diff_x + diff_y)
-        
-    #     # === Explicit time integration: φ^(n+1) = φ^n + Δt * RHS ===
-    #     if source is not None:
-    #         if chemical_dt is not None:
-    #             return field_loc + chemical_dt * (-adv_x - adv_y + diff + source[i_slice, j_slice])
-    #         else:
-    #             return field_loc + self.dt * (-adv_x - adv_y + diff + source[i_slice, j_slice])
-    #     else:
-    #         if chemical_dt is not None:
-    #             return field_loc + chemical_dt * (-adv_x - adv_y + diff)
-    #         else:
-    #             return field_loc + self.dt * (-adv_x - adv_y + diff)
 
     def temperature_boundary(self, T_new):
         # --- Left boundary (i=0) - Neumann (zero gradient) ---
@@ -179,30 +138,6 @@ class System:
         # --- Right boundary (outlet, i=n-1) - Extrapolation ---
         T_new[self.n-2, 2:self.m-2] = T_new[self.n-3, 2:self.m-2]
         T_new[self.n-1, 2:self.m-2] = T_new[self.n-3, 2:self.m-2]
-
-    # def update_temperature(self, u_new, v_new, heat, dt, i_int = slice(1, -1), j_int = slice(1, -1)):
-    #     T_new = np.copy(self.T)
-    #     # --- Temperature field ---
-    #     T_source = heat / (const.rho * const.c_p)
-    #     T_interior = self.step_vectorized_interior(
-    #         u_new, v_new, self.T, 
-    #         1/self.dx, 1/self.dy, const.nu, T_source
-    #     )
-        
-    #     # === UPDATE INTERIOR TEMPERATURE === 
-    #     T_new[i_int, j_int] = T_interior
-    #     if self.current_time <= self.Lx / self.Uslot:
-    #         x = np.linspace(0.0, self.Lx, self.n)
-    #         y = np.linspace(0.0, self.Ly, self.m)
-    #         X, Y = np.meshgrid(x, y, indexing='ij')
-    #         # circular heated rod centered in domain
-    #         mask = np.abs(Y - self.Ly/2) <= self.rode / 2
-    #         T_new[mask] = self.T_rode
-        
-    #     # === APPLY SCALAR BOUNDARY CONDITIONS ===
-    #     self.temperature_boundary(T_new)
-        
-    #     self.T = T_new
     
     def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
             # Use interior excluding two layers to allow 4th-order 5-point stencil
@@ -237,6 +172,14 @@ class System:
         return -adv_x - adv_y + diff + src
 
     def rk4_advance_temperature(self, u, v, heat, dt):
+        """
+        Advance temperature field using RK4 integrator.
+        Args:
+            u, v (np.ndarray): velocity fields in x and y directions.
+            heat (np.ndarray): volumetric heat release field (W/m^3).
+            dt (float): time-step size.
+        """
+        # prepare array
         T = np.copy(self.T)
         i_int = slice(2, -2); j_int = slice(2, -2)
         T_source = heat / (const.rho * const.c_p)

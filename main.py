@@ -55,8 +55,8 @@ def main():
     system.plot_concentration(save = True)
     system.plot_temperature(save = True)
     system.plot_velocity_magnitude(save = True)
-    # system.animation_concentration(species="CO2", save=True)
-    # system.animation_temperature(save=True)
+    system.animation_concentration(species="CO2", save=True)
+    system.animation_temperature(save=True)
 
 if __name__ == "__main__":
     main()

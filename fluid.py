@@ -105,7 +105,19 @@ class Fluid:
         return u_new, v_new
 
     # Optionnel : méthode pour appliquer BCs de vitesse si on veut externaliser
-    def apply_velocity_bcs(self, u_upd, v_upd, ind_inlet, ind_coflow, Uslot, Ucoflow):        
+    def apply_velocity_bcs(self, u_upd, v_upd, ind_inlet, ind_coflow, Uslot, Ucoflow):   
+        """
+        Apply velocity boundary conditions:
+        - Inlet (left boundary): specified velocities for CH4 and O2+N2 inlets
+        - Walls (top and bottom): no-slip (u=v=0)
+        - Outlet (right boundary): Neumann (zero-gradient) for u and v
+        Args:
+            u_upd, v_upd: updated velocity fields to apply BCs on
+            ind_inlet: index separating inlet slot region from coflow region
+            ind_coflow: index separating coflow region from outlet region
+            Uslot: inlet velocity magnitude for slot region
+            Ucoflow: inlet velocity magnitude for coflow region
+        """     
         # CH4 inlet (slot region, bottom wall)
         u_upd[:ind_inlet, 0] = 0
         v_upd[:ind_inlet, 0] = Uslot
@@ -226,6 +238,14 @@ class Fluid:
         self.P = P_new
     
     def correction_velocity(self, u_star, v_star):
+        """
+        Correct the intermediate velocity field using the pressure gradient:
+        u^(n+1) = u* - (Δt/ρ)∇P
+        Args:
+            u_star, v_star: intermediate velocity fields after advection-diffusion step
+        Returns:
+            u_new, v_new: corrected velocity fields
+        """
         # Calculate pressure gradients (central differences) on interior [2:-2, 2:-2]
         i_slice = slice(2, -2)
         j_slice = slice(2, -2)

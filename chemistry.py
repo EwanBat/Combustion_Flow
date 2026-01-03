@@ -81,7 +81,12 @@ class ChemistryManager:
         self.inv_dy = 1/dy
 
     def update_reaction_rates(self, T_field):
-        """Compute Arrhenius-based reaction rates for the global reaction (same as before)."""
+        """Compute Arrhenius-based reaction rates for the global reaction.
+        Args:
+            T_field (np.ndarray): temperature field (K).
+        Returns:
+            reaction_rates (dict): mapping species name -> reaction rate array (kg/m^3/s).
+        """
         O2 = self.chemistries['O2']
         CH4 = self.chemistries['CH4']
         exp_arg = -const.T_A / T_field
@@ -98,6 +103,10 @@ class ChemistryManager:
         return reaction_rates
 
     def heat_release(self):
+        """Compute volumetric heat release Omega_T (W/m^3) from reaction rates.
+        Returns:
+            omega_T (np.ndarray): volumetric heat release field (W/m^3).
+        """
         omega_T = 0.0
         for name, rate in self.reaction_rates.items():
             delta_h = const.enthalpy_of_formation.get(name, 0)
@@ -106,6 +115,13 @@ class ChemistryManager:
 
     # Boundary conditions for species (mêmes BCs que dans System)
     def chemistry_boundaries(self, Y_CH4_new, Y_O2_new, Y_CO2_new, Y_H2O_new, Y_N2_new, ind_inlet, ind_coflow):
+        """
+        Apply boundary conditions to species mass-fraction fields.
+        Args:
+            Y_CH4_new, Y_O2_new, Y_CO2_new, Y_H2O_new, Y_N2_new (np.ndarray):mass-fraction fields to apply BCs on.
+            ind_inlet (int): index separating inlet slot from coflow region.
+            ind_coflow (int): index separating coflow region from outlet.
+        """
         # --- Left boundary (i=0,1) - Neumann (zero gradient) for 4th-order ---
         for j in range(2, self.m-2):
             Y_CH4_new[0, j] = Y_CH4_new[2, j]
@@ -205,6 +221,14 @@ class ChemistryManager:
 
     # Compute RHS for one species (vectorisé)
     def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
+        """
+        Compute the RHS of the advection-diffusion-reaction equation for one species.
+        Args:
+            phi (np.ndarray): mass fraction field of the species.
+            u, v (np.ndarray): velocity fields in x and y directions.
+            diffusion_coef (float): molecular diffusivity of the species.
+            source (np.ndarray or None): source term field (kg/kg/s) or None.
+        """
         # Use interior excluding two layers to allow 4th-order 5-point stencil
         i = slice(2, -2); j = slice(2, -2)
         phi_loc = phi[i, j]
@@ -237,6 +261,13 @@ class ChemistryManager:
         return -adv_x - adv_y + diff + src
 
     def rk4_advance_species(self, u, v, dt, ind_inlet, ind_coflow):
+        """Advance species using RK4 integrator.
+        Args:
+            u, v (np.ndarray): velocity fields in x and y directions.
+            dt (float): time-step size.
+            ind_inlet (int): index separating inlet slot from coflow region.
+            ind_coflow (int): index separating coflow region from outlet.
+        """
         # prepare arrays
         Y = {name: np.copy(chem.Y) for name, chem in self.chemistries.items()}
         # sources in mass-fraction units (kg/m3 -> divide by rho inside RHS call as source expects kg/kg/s)
