@@ -9,6 +9,7 @@ This project implements a numerical simulation of a counterflow premixed flame u
 - **Multi-species reactive chemistry** with Arrhenius kinetics
 - **Operator splitting** for advection-diffusion-reaction equations
 - **Runge-Kutta 4th order (RK4)** time integration for species and temperature
+- **Successive Over-Relaxation (SOR)** for pressure correction and enforcing incompressibility with **Chorin projection method**
 
 ## Features
 
@@ -19,6 +20,7 @@ This project implements a numerical simulation of a counterflow premixed flame u
 - Automatic time step selection based on CFL and Fourier criteria
 - Data export and visualization tools
 - Animation generation for temporal evolution
+- Use of Numba for performance optimization
 
 ## Project Structure
 
@@ -132,7 +134,7 @@ Simulation data is saved as NumPy arrays (`.npy`) in the `data/` folder:
 
 ## License
 
-This project is provided for educational purposes.
+This project is licensed under the MIT License - see the [LICENSE] file for details.
 
 ## Authors
 

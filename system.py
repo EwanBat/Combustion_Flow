@@ -535,6 +535,50 @@ class System:
         
         plt.show()
 
+    def plot_divergence(self, load_from="data//simulation_data", save=False, filename="divergence.png"):
+        """
+        Plot divergence of the velocity field.
+        
+        Args:
+            load_from: Path prefix to load data from
+            save: Whether to save figure to file
+            filename: Output filename if save=True
+        """
+        # Load velocity data
+        try:
+            u_plot = np.load(f"{load_from}_u.npy")
+        except Exception:
+            u_plot = self.fluid.u
+            
+        try:
+            v_plot = np.load(f"{load_from}_v.npy")
+        except Exception:
+            v_plot = self.fluid.v
+        
+        # Calculate divergence
+        dudx = (u_plot[2:, 1:-1] - u_plot[:-2, 1:-1]) / (2 * self.dx)
+        dvdy = (v_plot[1:-1, 2:] - v_plot[1:-1, :-2]) / (2 * self.dy)
+        divergence = dudx + dvdy
+        
+        # Create figure
+        fig = plt.figure(figsize=(8, 6))
+        
+        # Plot divergence
+        plt.imshow(divergence.T, extent=(self.dx*1e3, (self.Lx - self.dx)*1e3,
+                                          self.dy*1e3, (self.Ly - self.dy)*1e3), 
+                   aspect='auto', cmap='seismic', vmin=-np.max(np.abs(divergence[5:-5,5-5])), vmax=np.max(np.abs(divergence[5:-5,5-5])))
+        
+        plt.colorbar(label='Divergence (1/s)')
+        plt.xlabel('x (mm)')
+        plt.ylabel('y (mm)')
+        plt.title('Velocity Field Divergence')
+        plt.tight_layout()
+        
+        if save:
+            plt.savefig(filename)
+        
+        plt.show()
+
     def animation_concentration(self, load_from="simulation_data", species='CH4', interval=200, save=False, filename="concentration_animation.gif"):
         """
         Create an animation of species concentration over time.

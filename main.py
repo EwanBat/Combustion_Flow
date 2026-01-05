@@ -12,7 +12,7 @@ def main():
     viscosity = const.nu  # Dynamic viscosity
 
     # Initialize velocity field (example: uniform flow in x-direction)
-    n, m = 150, 150
+    n, m = 150,150
     
     # Create Fluid object
     u_initial = np.zeros((n, m))  # m/s
@@ -55,8 +55,9 @@ def main():
     system.plot_concentration(save = True)
     system.plot_temperature(save = True)
     system.plot_velocity_magnitude(save = True)
-    system.animation_concentration(species="CO2", save=True)
-    system.animation_temperature(save=True)
+    system.plot_divergence(save = True)
+    # system.animation_concentration(species="CO2", save=True)
+    # system.animation_temperature(save=True)
 
 if __name__ == "__main__":
     main()

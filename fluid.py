@@ -162,27 +162,23 @@ class Fluid:
         
     def SOR_pressure_solver(self, u, v):
         """
-        Solve pressure Poisson equation using SOR for:
-        ∇²p = -ρ [ (∂u/∂x)^2 + 2 (∂u/∂y)(∂v/∂x) + (∂v/∂y)^2 ]
-        Uses central differences for derivatives and red-black SOR.
-        Args:
-            u, v: velocity fields (same grid as self.P)
+        Solve pressure Poisson equation for incompressible flow:
+        ∇²p = (ρ/Δt) ∇·u*
+        where u* is the intermediate velocity field
         """
-        # --- Compute derivatives with central differences on interior [2:-2, 2:-2] ---
+        # --- Compute divergence of intermediate velocity ---
         i_slice = slice(2, -2)
         j_slice = slice(2, -2)
         
+        # Central differences for divergence
         du_dx = 0.5 * self.inv_dx * (u[3:-1, j_slice] - u[1:-3, j_slice])
-        du_dy = 0.5 * self.inv_dy * (u[i_slice, 3:-1] - u[i_slice, 1:-3])
-        dv_dx = 0.5 * self.inv_dx * (v[3:-1, j_slice] - v[1:-3, j_slice])
         dv_dy = 0.5 * self.inv_dy * (v[i_slice, 3:-1] - v[i_slice, 1:-3])
-
-        # RHS: -rho * [ (du_dx)^2 + 2*(du_dy)*(dv_dx) + (dv_dy)^2 ]
+        
+        # RHS: (ρ/Δt) * divergence
         f = np.zeros_like(self.P)
-        f_interior = -const.rho * (du_dx**2 + 2.0 * du_dy * dv_dx + dv_dy**2)
-        f[i_slice, j_slice] = f_interior
+        f[i_slice, j_slice] = (const.rho / self.dt) * (du_dx + dv_dy)
 
-        # === Initialize SOR ===
+        # === SOR solver (reste identique) ===
         P_new = np.copy(self.P)
         omega = 1.5
         tolerance = 1e-6
@@ -191,45 +187,40 @@ class Fluid:
         f_in = f[i_slice, j_slice]
         denom = 2.0 * (self.inv_dx**2 + self.inv_dy**2)
 
-        # Precompute index masks for red-black pattern (interior is now n-4 x m-4)
         ii, jj = np.indices((self.n-4, self.m-4))
         mask_red = ((ii + jj) % 2) == 0
         mask_black = ~mask_red
 
         def compute_Pgs_local(P):
-            P_ip = P[3:-1, j_slice]     # P(i+1, j)
-            P_im = P[1:-3, j_slice]     # P(i-1, j)
-            P_jp = P[i_slice, 3:-1]     # P(i, j+1)
-            P_jm = P[i_slice, 1:-3]     # P(i, j-1)
+            P_ip = P[3:-1, j_slice]
+            P_im = P[1:-3, j_slice]
+            P_jp = P[i_slice, 3:-1]
+            P_jm = P[i_slice, 1:-3]
             laplacian = (P_ip + P_im) * self.inv_dx**2 + (P_jp + P_jm) * self.inv_dy**2
             return (laplacian - f_in) / denom
 
         for iteration in range(max_iterations):
             P_old = P_new.copy()
-
             P_in = P_new[i_slice, j_slice]
 
-            # Update red points
             P_gs = compute_Pgs_local(P_new)
             P_in[mask_red] = (1.0 - omega) * P_in[mask_red] + omega * P_gs[mask_red]
 
-            # Update black points
             P_gs = compute_Pgs_local(P_new)
             P_in[mask_black] = (1.0 - omega) * P_in[mask_black] + omega * P_gs[mask_black]
 
-            # convergence check
             residual = np.max(np.abs(P_new - P_old))
             if residual < tolerance:
                 break
 
-        # === Boundary conditions (2 ghost cell layers) ===
-        # Left boundary (inlet) Neumann
+        # === Boundary conditions ===
+        # Left (inlet): ∂P/∂x = 0
         P_new[0, :] = P_new[2, :]
         P_new[1, :] = P_new[2, :]
-        # Right boundary (outlet) reference pressure
-        P_new[-1, :] = P_new[-3, :]
-        P_new[-2, :] = P_new[-3, :]
-        # Bottom and top walls Neumann
+        # Right (outlet): P = 0 (reference)
+        P_new[-1, :] = 0
+        P_new[-2, :] = 0
+        # Walls: ∂P/∂n = 0
         P_new[:, 0] = P_new[:, 2]
         P_new[:, 1] = P_new[:, 2]
         P_new[:, -1] = P_new[:, -3]
@@ -239,48 +230,22 @@ class Fluid:
     
     def correction_velocity(self, u_star, v_star):
         """
-        Correct the intermediate velocity field using the pressure gradient:
-        u^(n+1) = u* - (Δt/ρ)∇P
-        Args:
-            u_star, v_star: intermediate velocity fields after advection-diffusion step
-        Returns:
-            u_new, v_new: corrected velocity fields
+        Correct intermediate velocity: u^(n+1) = u* - (Δt/ρ)∇P
+        Cette correction REMPLACE u* et v*, pas s'ajoute à un calcul précédent
         """
-        # Calculate pressure gradients (central differences) on interior [2:-2, 2:-2]
         i_slice = slice(2, -2)
         j_slice = slice(2, -2)
         
+        # Gradients de pression (différences centrées)
         dp_dx = (self.P[3:-1, j_slice] - self.P[1:-3, j_slice]) * self.inv_dx * 0.5
         dp_dy = (self.P[i_slice, 3:-1] - self.P[i_slice, 1:-3]) * self.inv_dy * 0.5
 
-        # Apply correction: u^(n+1) = u* - (Δt/ρ)∇P
+        # Correction simple (PAS de réadvection ni rediffusion)
         u_new = np.copy(u_star)
         v_new = np.copy(v_star)
         
         u_new[i_slice, j_slice] = u_star[i_slice, j_slice] - (self.dt / const.rho) * dp_dx
         v_new[i_slice, j_slice] = v_star[i_slice, j_slice] - (self.dt / const.rho) * dp_dy
-
-        # --- Left boundary (i=0,1) special handling for corrected velocity ---
-        for i in [0, 1]:
-            for j in range(2, self.m-2):
-                v_loc = v_star[i, j]
-                u_new[i, j] = 0  # No-slip
-                
-                # Upwind advection for v-component
-                if v_loc >= 0:
-                    adv_v_y = v_loc * (v_loc - v_star[i, j-1]) * self.inv_dy
-                else:
-                    adv_v_y = v_loc * (v_star[i, j+1] - v_loc) * self.inv_dy
-                
-                # Asymmetric diffusion
-                diffusion_v = const.nu * (
-                    (2*v_star[i+1, j] - 2*v_loc) * self.inv_dx**2 +
-                    (v_star[i, j+1] - 2*v_loc + v_star[i, j-1]) * self.inv_dy**2
-                )
-                
-                # Apply pressure correction (use gradient at i=2 for ghost cells)
-                dp_dy_local = dp_dy[0, j-2] if i < 2 else dp_dy[i-2, j-2]
-                v_new[i, j] = v_loc + self.dt * (-adv_v_y + diffusion_v - (self.dt / const.rho) * dp_dy_local)
 
         return u_new, v_new
 
@@ -342,28 +307,24 @@ class Fluid:
     
     @staticmethod
     @jit(nopython=True, parallel=True)
-    def _sor_kernel(P, u, v, inv_dx, inv_dy, rho, omega, tolerance, max_iterations, n, m):
-        """Numba-optimized SOR solver kernel."""
+    def _sor_kernel(P, u, v, inv_dx, inv_dy, rho, dt, omega, tolerance, max_iterations, n, m):
+        """Numba SOR kernel pour fluide incompressible."""
         P_new = np.copy(P)
         
-        # Compute RHS
+        # RHS: (ρ/Δt) * ∇·u
         f = np.zeros_like(P)
         for i in prange(2, n-2):
             for j in range(2, m-2):
                 du_dx = 0.5 * inv_dx * (u[i+1, j] - u[i-1, j])
-                du_dy = 0.5 * inv_dy * (u[i, j+1] - u[i, j-1])
-                dv_dx = 0.5 * inv_dx * (v[i+1, j] - v[i-1, j])
                 dv_dy = 0.5 * inv_dy * (v[i, j+1] - v[i, j-1])
-                
-                f[i, j] = -rho * (du_dx**2 + 2.0 * du_dy * dv_dx + dv_dy**2)
+                f[i, j] = (rho / dt) * (du_dx + dv_dy)
         
         denom = 2.0 * (inv_dx**2 + inv_dy**2)
         
-        # SOR iterations
         for iteration in range(max_iterations):
             P_old = P_new.copy()
             
-            # Red points
+            # Red-black SOR (identique)
             for i in prange(2, n-2):
                 for j in range(2, m-2):
                     if (i + j) % 2 == 0:
@@ -372,7 +333,6 @@ class Fluid:
                         P_gs = (laplacian - f[i, j]) / denom
                         P_new[i, j] = (1.0 - omega) * P_new[i, j] + omega * P_gs
             
-            # Black points
             for i in prange(2, n-2):
                 for j in range(2, m-2):
                     if (i + j) % 2 == 1:
@@ -381,7 +341,6 @@ class Fluid:
                         P_gs = (laplacian - f[i, j]) / denom
                         P_new[i, j] = (1.0 - omega) * P_new[i, j] + omega * P_gs
             
-            # Check convergence
             residual = 0.0
             for i in range(n):
                 for j in range(m):
@@ -389,14 +348,14 @@ class Fluid:
                     if diff > residual:
                         residual = diff
             
-            if residual < tolerance:
-                break
+                if residual < tolerance:
+                    break
         
-        # Apply boundary conditions
+        # BCs
         P_new[0, :] = P_new[2, :]
         P_new[1, :] = P_new[2, :]
-        P_new[-1, :] = P_new[-3, :]
-        P_new[-2, :] = P_new[-3, :]
+        P_new[-1, :] = 0.0
+        P_new[-2, :] = 0.0
         P_new[:, 0] = P_new[:, 2]
         P_new[:, 1] = P_new[:, 2]
         P_new[:, -1] = P_new[:, -3]
@@ -405,14 +364,9 @@ class Fluid:
         return P_new
     
     def SOR_pressure_solver_numba(self, u, v):
-        """Numba-accelerated version of SOR pressure solver."""
-        omega = 1.5
-        tolerance = 1e-6
-        max_iterations = 2000
-        
         self.P = self._sor_kernel(self.P, u, v, self.inv_dx, self.inv_dy, 
-                                  const.rho, omega, tolerance, max_iterations, 
-                                  self.n, self.m)
+                                const.rho, self.dt, 1.5, 1e-6, 2000, 
+                                self.n, self.m)
     
     @staticmethod
     @jit(nopython=True, parallel=True)
