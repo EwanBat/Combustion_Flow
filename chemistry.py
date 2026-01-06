@@ -87,13 +87,32 @@ class ChemistryManager:
         Returns:
             reaction_rates (dict): mapping species name -> reaction rate array (kg/m^3/s).
         """
+        # ============================================================================
+        # SPECIES DATA: Extract chemistry objects for reactants
+        # ============================================================================
         O2 = self.chemistries['O2']
         CH4 = self.chemistries['CH4']
+        
+        # ============================================================================
+        # ARRHENIUS RATE: Calculate temperature-dependent rate constant k
+        # ============================================================================
         exp_arg = -const.T_A / T_field
         k = const.A * np.exp(exp_arg)
+        
+        # ============================================================================
+        # CONCENTRATIONS: Convert mass fractions to molar concentrations
+        # ============================================================================
         O2_conc = O2.Y * const.rho / O2.molar_mass
         CH4_conc = CH4.Y * const.rho / CH4.molar_mass
+        
+        # ============================================================================
+        # REACTION RATE: Compute volumetric reaction rate Q
+        # ============================================================================
         Q = k * O2_conc**2 * CH4_conc
+        
+        # ============================================================================
+        # SPECIES RATES: Calculate production/consumption rate for each species
+        # ============================================================================
         reaction_rates = {}
         for name, chem in self.chemistries.items():
             nu_i = const.stoichiometric_coefficients.get(name, 0)
@@ -107,6 +126,9 @@ class ChemistryManager:
         Returns:
             omega_T (np.ndarray): volumetric heat release field (W/m^3).
         """
+        # ============================================================================
+        # HEAT RELEASE: Compute volumetric heat source from reaction enthalpies
+        # ============================================================================
         omega_T = 0.0
         for name, rate in self.reaction_rates.items():
             delta_h = const.enthalpy_of_formation.get(name, 0)
@@ -122,7 +144,9 @@ class ChemistryManager:
             ind_inlet (int): index separating inlet slot from coflow region.
             ind_coflow (int): index separating coflow region from outlet.
         """
-        # --- Left boundary (i=0,1) - Neumann (zero gradient) for 4th-order ---
+        # ============================================================================
+        # LEFT BOUNDARY: Neumann condition (zero gradient) for 4th-order stencil
+        # ============================================================================
         for j in range(2, self.m-2):
             Y_CH4_new[0, j] = Y_CH4_new[2, j]
             Y_O2_new[0, j] = Y_O2_new[2, j]
@@ -135,7 +159,9 @@ class ChemistryManager:
             Y_H2O_new[1, j] = Y_H2O_new[2, j]
             Y_N2_new[1, j] = Y_N2_new[2, j]
         
-        # --- CH4 inlet (slot region, bottom wall j=0,1) ---
+        # ============================================================================
+        # INLET CH4: Slot region bottom wall (pure CH4)
+        # ============================================================================
         Y_CH4_new[:ind_inlet, 0] = 1.0
         Y_O2_new[:ind_inlet, 0] = 0.0
         Y_CO2_new[:ind_inlet, 0] = 0.0
@@ -147,7 +173,9 @@ class ChemistryManager:
         Y_H2O_new[:ind_inlet, 1] = 0.0
         Y_N2_new[:ind_inlet, 1] = 0.0
         
-        # --- O2+N2 inlet (slot region, top wall j=m-1, m-2) ---
+        # ============================================================================
+        # INLET O2+N2: Slot region top wall (air composition)
+        # ============================================================================
         Y_CH4_new[:ind_inlet, self.m-1] = 0.0
         Y_O2_new[:ind_inlet, self.m-1] = 0.21
         Y_CO2_new[:ind_inlet, self.m-1] = 0.0
@@ -159,7 +187,9 @@ class ChemistryManager:
         Y_H2O_new[:ind_inlet, self.m-2] = 0.0
         Y_N2_new[:ind_inlet, self.m-2] = 0.79
         
-        # --- N2 coflow inlet (coflow region, bottom wall j=0,1) ---
+        # ============================================================================
+        # COFLOW N2: Coflow region bottom wall (pure N2)
+        # ============================================================================
         Y_CH4_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_O2_new[ind_inlet:ind_coflow, 0] = 0.0
         Y_CO2_new[ind_inlet:ind_coflow, 0] = 0.0
@@ -171,7 +201,9 @@ class ChemistryManager:
         Y_H2O_new[ind_inlet:ind_coflow, 1] = 0.0
         Y_N2_new[ind_inlet:ind_coflow, 1] = 1.0
         
-        # --- N2 coflow inlet (coflow region, top wall j=m-1,m-2) ---
+        # ============================================================================
+        # COFLOW N2: Coflow region top wall (pure N2)
+        # ============================================================================
         Y_CH4_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_O2_new[ind_inlet:ind_coflow, self.m-1] = 0.0
         Y_CO2_new[ind_inlet:ind_coflow, self.m-1] = 0.0
@@ -183,7 +215,9 @@ class ChemistryManager:
         Y_H2O_new[ind_inlet:ind_coflow, self.m-2] = 0.0
         Y_N2_new[ind_inlet:ind_coflow, self.m-2] = 1.0
         
-        # --- Lower wall (outlet region, j=0,1) - Neumann ---
+        # ============================================================================
+        # WALL BOUNDARY: Lower wall outlet region (Neumann condition)
+        # ============================================================================
         Y_CH4_new[ind_coflow:, 0] = Y_CH4_new[ind_coflow:, 2]
         Y_O2_new[ind_coflow:, 0] = Y_O2_new[ind_coflow:, 2]
         Y_CO2_new[ind_coflow:, 0] = Y_CO2_new[ind_coflow:, 2]
@@ -195,7 +229,9 @@ class ChemistryManager:
         Y_H2O_new[ind_coflow:, 1] = Y_H2O_new[ind_coflow:, 2]
         Y_N2_new[ind_coflow:, 1] = Y_N2_new[ind_coflow:, 2]
         
-        # --- Upper wall (outlet region, j=m-1,m-2) - Neumann ---
+        # ============================================================================
+        # WALL BOUNDARY: Upper wall outlet region (Neumann condition)
+        # ============================================================================
         Y_CH4_new[ind_coflow:, self.m-1] = Y_CH4_new[ind_coflow:, self.m-3]
         Y_O2_new[ind_coflow:, self.m-1] = Y_O2_new[ind_coflow:, self.m-3]
         Y_CO2_new[ind_coflow:, self.m-1] = Y_CO2_new[ind_coflow:, self.m-3]
@@ -207,7 +243,9 @@ class ChemistryManager:
         Y_H2O_new[ind_coflow:, self.m-2] = Y_H2O_new[ind_coflow:, self.m-3]
         Y_N2_new[ind_coflow:, self.m-2] = Y_N2_new[ind_coflow:, self.m-3]
         
-        # --- Right boundary (outlet, i=n-1,n-2) - Extrapolation ---
+        # ============================================================================
+        # OUTLET BOUNDARY: Right boundary (extrapolation)
+        # ============================================================================
         Y_CH4_new[self.n-1, 2:self.m-2] = Y_CH4_new[self.n-3, 2:self.m-2]
         Y_O2_new[self.n-1, 2:self.m-2] = Y_O2_new[self.n-3, 2:self.m-2]
         Y_CO2_new[self.n-1, 2:self.m-2] = Y_CO2_new[self.n-3, 2:self.m-2]
@@ -229,21 +267,29 @@ class ChemistryManager:
             diffusion_coef (float): molecular diffusivity of the species.
             source (np.ndarray or None): source term field (kg/kg/s) or None.
         """
-        # Use interior excluding two layers to allow 4th-order 5-point stencil
+        # ============================================================================
+        # GRID SETUP: Define interior domain for 4th-order stencil
+        # ============================================================================
         i = slice(2, -2); j = slice(2, -2)
         phi_loc = phi[i, j]
-        # shifts in x
+        
+        # ============================================================================
+        # FIELD EXTRACTION: Get shifted values for spatial derivatives
+        # ============================================================================
+        # Shifts in x-direction
         phi_m2_x = phi[:-4, j]
         phi_m1_x = phi[1:-3, j]
         phi_p1_x = phi[3:-1, j]
         phi_p2_x = phi[4:, j]
-        # shifts in y
+        # Shifts in y-direction
         phi_m2_y = phi[i, :-4]
         phi_m1_y = phi[i, 1:-3]
         phi_p1_y = phi[i, 3:-1]
         phi_p2_y = phi[i, 4:]
 
-        # advective (upwind) using one-cell offsets (kept compatible with interior slice)
+        # ============================================================================
+        # ADVECTION: Compute upwind advective fluxes
+        # ============================================================================
         u_loc = u[i, j]; v_loc = v[i, j]
         u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
         adv_x = (u_pos * (phi_loc - phi_m1_x) * self.inv_dx +
@@ -252,12 +298,19 @@ class ChemistryManager:
         adv_y = (v_pos * (phi_loc - phi_m1_y) * self.inv_dy +
                  v_neg * (phi_p1_y - phi_loc) * self.inv_dy)
 
-        # 4th-order central approximation of second derivative (5-point stencil)
+        # ============================================================================
+        # DIFFUSION: Compute 4th-order central differences (5-point stencil)
+        # ============================================================================
         diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * self.inv_dx**2 / 12.0
         diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * self.inv_dy**2 / 12.0
 
         diff = diffusion_coef * (diff_x + diff_y)
+        
+        # ============================================================================
+        # SOURCE TERM: Add chemical reaction source
+        # ============================================================================
         src = source[i, j] if source is not None else 0.0
+        
         return -adv_x - adv_y + diff + src
 
     def rk4_advance_species(self, u, v, dt, ind_inlet, ind_coflow):
@@ -268,7 +321,9 @@ class ChemistryManager:
             ind_inlet (int): index separating inlet slot from coflow region.
             ind_coflow (int): index separating coflow region from outlet.
         """
-        # prepare arrays
+        # ============================================================================
+        # INITIALIZATION: Prepare arrays and sources
+        # ============================================================================
         Y = {name: np.copy(chem.Y) for name, chem in self.chemistries.items()}
         # sources in mass-fraction units (kg/m3 -> divide by rho inside RHS call as source expects kg/kg/s)
         sources = {name: (self.reaction_rates[name] / const.rho) for name in self.chemistries.keys()}
@@ -280,10 +335,14 @@ class ChemistryManager:
                 ks[name] = self.compute_species_rhs(Y_fields[name], u, v, chem.diffusivity, sources[name])
             return ks
 
-        # k1
+        # ============================================================================
+        # RK4 STAGE 1: Compute k1 at current time
+        # ============================================================================
         k1 = compute_all_k(Y)
 
-        # k2
+        # ============================================================================
+        # RK4 STAGE 2: Compute k2 at midpoint using k1
+        # ============================================================================
         Y_k2 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
             Y_k2[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k1[name]
@@ -291,26 +350,34 @@ class ChemistryManager:
         self.chemistry_boundaries(Y_k2['CH4'], Y_k2['O2'], Y_k2['CO2'], Y_k2['H2O'], Y_k2['N2'], ind_inlet, ind_coflow)
         k2 = compute_all_k(Y_k2)
 
-        # k3
+        # ============================================================================
+        # RK4 STAGE 3: Compute k3 at midpoint using k2
+        # ============================================================================
         Y_k3 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
             Y_k3[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + 0.5 * dt * k2[name]
         self.chemistry_boundaries(Y_k3['CH4'], Y_k3['O2'], Y_k3['CO2'], Y_k3['H2O'], Y_k3['N2'], ind_inlet, ind_coflow)
         k3 = compute_all_k(Y_k3)
 
-        # k4
+        # ============================================================================
+        # RK4 STAGE 4: Compute k4 at endpoint using k3
+        # ============================================================================
         Y_k4 = {name: np.copy(Y[name]) for name in Y}
         for name in Y:
             Y_k4[name][2:-2, 2:-2] = Y[name][2:-2, 2:-2] + dt * k3[name]
         self.chemistry_boundaries(Y_k4['CH4'], Y_k4['O2'], Y_k4['CO2'], Y_k4['H2O'], Y_k4['N2'], ind_inlet, ind_coflow)
         k4 = compute_all_k(Y_k4)
 
-        # combine to final Y_new (interior 4th-order region)
+        # ============================================================================
+        # RK4 COMBINATION: Weighted average of all stages
+        # ============================================================================
         for name in Y:
             Y[name][2:-2, 2:-2] = (Y[name][2:-2, 2:-2] +
                                    dt/6.0 * (k1[name] + 2.0*k2[name] + 2.0*k3[name] + k4[name]))
 
-        # enforce small-value clipping and BCs
+        # ============================================================================
+        # FINALIZATION: Apply boundary conditions and clip small values
+        # ============================================================================
         self.chemistry_boundaries(Y['CH4'], Y['O2'], Y['CO2'], Y['H2O'], Y['N2'], ind_inlet, ind_coflow)
         for name in Y:
             Y[name][Y[name] < 1e-15] = 0.0
@@ -452,20 +519,35 @@ def _compute_reaction_rates_numba(T_field, Y_O2, Y_CH4, M_O2, M_CH4, T_A, A, rho
     Returns:
         Tuple of (k_CH4, k_O2, k_CO2, k_H2O)
     """
+    # ===========================================================================
+    # INITIALIZATION: Allocate arrays for reaction rates
+    # ===========================================================================
     n, m = T_field.shape
     k_CH4 = np.zeros((n, m))
     k_O2 = np.zeros((n, m))
     k_CO2 = np.zeros((n, m))
     k_H2O = np.zeros((n, m))
     
+    # ===========================================================================
+    # REACTION RATE LOOP: Compute rates at each grid point
+    # ===========================================================================
     for i in prange(n):
         for j in range(m):
+            # ===================================================================
+            # CONCENTRATIONS: Calculate molar concentrations
+            # ===================================================================
             T = T_field[i, j]
             C_O2 = (Y_O2[i, j] / M_O2) * rho
             C_CH4 = (Y_CH4[i, j] / M_CH4) / rho
             
+            # ===================================================================
+            # ARRHENIUS RATE: Compute k = A * exp(-T_A/T) * [CH4] * [O2]^2
+            # ===================================================================
             k = A * np.exp(-T_A / T) * (C_CH4) * (C_O2**2)
             
+            # ===================================================================
+            # SPECIES RATES: Apply stoichiometry to get individual rates
+            # ===================================================================
             k_CH4[i, j] = stoich_coef[0] * molar_masses[0] * k
             k_O2[i, j] = stoich_coef[1] * molar_masses[1] * k
             k_CO2[i, j] = stoich_coef[2] * molar_masses[2] * k
@@ -477,9 +559,15 @@ def _compute_reaction_rates_numba(T_field, Y_O2, Y_CH4, M_O2, M_CH4, T_A, A, rho
 @njit(parallel=True)
 def _compute_heat_release_numba(rates_array, delta_h_array, molar_mass_array):
     """Numba-compiled function to compute heat release in parallel."""
+    # ===========================================================================
+    # INITIALIZATION: Setup heat release array
+    # ===========================================================================
     n_species = len(rates_array)
     omega_T = np.zeros_like(rates_array[0])
     
+    # ===========================================================================
+    # HEAT RELEASE: Sum contributions from all species
+    # ===========================================================================
     for i in prange(n_species):
         omega_T -= rates_array[i] * delta_h_array[i] / molar_mass_array[i]
     
@@ -489,7 +577,9 @@ def _compute_heat_release_numba(rates_array, delta_h_array, molar_mass_array):
 @njit(parallel=True)
 def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet, ind_coflow, n, m):
     """Numba-compiled function to apply boundary conditions in parallel."""
-    # Left boundary (i=0,1) - Neumann
+    # ===========================================================================
+    # LEFT BOUNDARY: Neumann condition (zero gradient)
+    # ===========================================================================
     for j in prange(2, m-2):
         Y_CH4[0, j] = Y_CH4[2, j]
         Y_O2[0, j] = Y_O2[2, j]
@@ -502,7 +592,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[1, j] = Y_H2O[2, j]
         Y_N2[1, j] = Y_N2[2, j]
     
-    # CH4 inlet (slot region, bottom wall j=0,1)
+    # ===========================================================================
+    # INLET CH4: Slot region bottom wall (pure CH4)
+    # ===========================================================================
     for i in prange(ind_inlet):
         Y_CH4[i, 0] = 1.0
         Y_O2[i, 0] = 0.0
@@ -515,7 +607,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, 1] = 0.0
         Y_N2[i, 1] = 0.0
     
-    # O2+N2 inlet (slot region, top wall)
+    # ===========================================================================
+    # INLET O2+N2: Slot region top wall (air composition)
+    # ===========================================================================
     for i in prange(ind_inlet):
         Y_CH4[i, m-1] = 0.0
         Y_O2[i, m-1] = 0.21
@@ -528,7 +622,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, m-2] = 0.0
         Y_N2[i, m-2] = 0.79
     
-    # N2 coflow inlet (coflow region, bottom wall)
+    # ===========================================================================
+    # COFLOW N2: Coflow region bottom wall (pure N2)
+    # ===========================================================================
     for i in prange(ind_inlet, ind_coflow):
         Y_CH4[i, 0] = 0.0
         Y_O2[i, 0] = 0.0
@@ -541,7 +637,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, 1] = 0.0
         Y_N2[i, 1] = 1.0
     
-    # N2 coflow inlet (coflow region, top wall)
+    # ===========================================================================
+    # COFLOW N2: Coflow region top wall (pure N2)
+    # ===========================================================================
     for i in prange(ind_inlet, ind_coflow):
         Y_CH4[i, m-1] = 0.0
         Y_O2[i, m-1] = 0.0
@@ -554,7 +652,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, m-2] = 0.0
         Y_N2[i, m-2] = 1.0
     
-    # Lower wall (outlet region) - Neumann
+    # ===========================================================================
+    # WALL BOUNDARY: Lower wall outlet region (Neumann condition)
+    # ===========================================================================
     for i in prange(ind_coflow, n):
         Y_CH4[i, 0] = Y_CH4[i, 2]
         Y_O2[i, 0] = Y_O2[i, 2]
@@ -567,7 +667,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, 1] = Y_H2O[i, 2]
         Y_N2[i, 1] = Y_N2[i, 2]
     
-    # Upper wall (outlet region) - Neumann
+    # ===========================================================================
+    # WALL BOUNDARY: Upper wall outlet region (Neumann condition)
+    # ===========================================================================
     for i in prange(ind_coflow, n):
         Y_CH4[i, m-1] = Y_CH4[i, m-3]
         Y_O2[i, m-1] = Y_O2[i, m-3]
@@ -580,7 +682,9 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
         Y_H2O[i, m-2] = Y_H2O[i, m-3]
         Y_N2[i, m-2] = Y_N2[i, m-3]
     
-    # Right boundary (outlet) - Extrapolation
+    # ===========================================================================
+    # OUTLET BOUNDARY: Right boundary (extrapolation)
+    # ===========================================================================
     for j in prange(2, m-2):
         Y_CH4[n-1, j] = Y_CH4[n-3, j]
         Y_O2[n-1, j] = Y_O2[n-3, j]
@@ -597,16 +701,28 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
 @njit(parallel=True)
 def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy, rhs):
     """Numba-compiled function to compute species RHS in parallel."""
+    # ===========================================================================
+    # GRID SETUP: Extract dimensions and precompute inverses
+    # ===========================================================================
     n_interior = rhs.shape[0]
     m_interior = rhs.shape[1]
     inv_dx2 = inv_dx * inv_dx
     inv_dy2 = inv_dy * inv_dy
     
+    # ===========================================================================
+    # RHS COMPUTATION LOOP: Compute right-hand side for each interior point
+    # ===========================================================================
     for i in prange(n_interior):
         for j in range(m_interior):
+            # ===================================================================
+            # INDEX OFFSET: Map interior to actual grid position
+            # ===================================================================
             ii = i + 2  # offset to actual grid position
             jj = j + 2
             
+            # ===================================================================
+            # FIELD EXTRACTION: Get local and neighbor values
+            # ===================================================================
             phi_loc = phi[ii, jj]
             phi_m2_x = phi[ii-2, jj]
             phi_m1_x = phi[ii-1, jj]
@@ -620,7 +736,9 @@ def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy
             u_loc = u[ii, jj]
             v_loc = v[ii, jj]
             
-            # Upwind advection
+            # ===================================================================
+            # ADVECTION: Upwind scheme for convective terms
+            # ===================================================================
             if u_loc > 0:
                 adv_x = u_loc * (phi_loc - phi_m1_x) * inv_dx
             else:
@@ -631,11 +749,20 @@ def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy
             else:
                 adv_y = v_loc * (phi_p1_y - phi_loc) * inv_dy
             
-            # 4th-order central diffusion
+            # ===================================================================
+            # DIFFUSION: 4th-order central differences
+            # ===================================================================
             diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * inv_dx2 / 12.0
             diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * inv_dy2 / 12.0
             
             diff = diffusion_coef * (diff_x + diff_y)
+            
+            # ===================================================================
+            # SOURCE TERM: Add chemical reaction contribution
+            # ===================================================================
             src = source[ii, jj]
             
+            # ===================================================================
+            # COMBINE: Assemble total RHS
+            # ===================================================================
             rhs[i, j] = -adv_x - adv_y + diff + src
