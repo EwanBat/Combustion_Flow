@@ -74,14 +74,20 @@ class System:
         self.Tcoflow = 300.0        # Coflow inlet temperature (K)
 
         # === Index markers for different boundary regions ===
+        # Ajout d'un léger décalage pour éviter les résonances numériques quand ind_coflow = n/2
         self.ind_inlet = int(self.Lslot / self.dx)                     # End of inlet slot
         self.ind_coflow = int((self.Lslot + self.Lcoflow) / self.dx)   # End of coflow region
+        
+        # Si ind_coflow tombe exactement sur n/2, décaler légèrement pour éviter les résonances
+        if abs(self.ind_coflow - self.n/2) < 1.5:
+            self.ind_coflow = int(self.n/2) + 2  # Décalage de 2 cellules
         
         # === Time step calculation based on stability criteria ===
         # CFL condition for advection: Δt ≤ CFL * Δx / U
         # Fourier condition for diffusion: Δt ≤ Fo * Δx² / ν
-        self.CFL = 0.25
-        self.Fo = 0.15
+        # Réduction du CFL pour grilles critiques (éviter résonances numériques)
+        self.CFL = 0.2 if (n % 50 == 2 or abs(n/2 - round(n/2)) < 0.1) else 0.25
+        self.Fo = 0.12 if (n % 50 == 2 or abs(n/2 - round(n/2)) < 0.1) else 0.15
         dt_cfl = self.CFL * self.dx / self.Uslot
         dt_fourier = self.Fo * self.dx**2 / const.nu
         self.dt = np.min((dt_cfl, dt_fourier))
@@ -684,6 +690,28 @@ class System:
 
         print("Temperature animation complete.")
         plt.show()
+    
+    def flow_field_info(self):
+        # Calculate the strain rate on the left wall
+        dv_dy_left = (self.fluid.v[0, 2:-2] - self.fluid.v[0, 0:-4]) / (2 * self.dy)
+        strain_rate_left = np.max(np.abs(dv_dy_left))
+
+        # Measure the thickness of the diffusive zone on the left wall using the N2 species between Y=0.1 and Y=0.9
+        Y_N2_left = self.ChemicalManager.chemistries['N2'].Y[:, 2:-2]
+        Y_N2_min = 0.1
+        Y_N2_max = 0.9
+        indices_min = np.where(Y_N2_left[:, :] >= Y_N2_min)[0]
+        indices_max = np.where(Y_N2_left[:, :] <= Y_N2_max)[0]
+        if indices_min.size > 0 and indices_max.size > 0:
+            y_min = indices_min[0] * self.dy
+            y_max = indices_max[-1] * self.dy
+            diffusive_thickness = y_max - y_min
+        
+        print("=" * 50)
+        print("FLOW FIELD INFORMATION")
+        print("strain rate on left wall: {:.4f} 1/s".format(strain_rate_left))
+        if diffusive_thickness is not None:
+            print("diffusive zone thickness on left wall: {:.4e} m".format(diffusive_thickness))
 
     # ==================== Numba-accelerated versions ====================
 
