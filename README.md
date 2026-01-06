@@ -13,7 +13,7 @@ This project implements a numerical simulation of a counterflow premixed flame u
 
 ## Features
 
-- 2D incompressible flow solver with upwind advection scheme
+- 2D incompressible flow solver with upwind advection / Lax-Wendroff scheme
 - Multi-species chemistry manager (CH₄, O₂, CO₂, H₂O, N₂)
 - Temperature-dependent reaction rates (Arrhenius law)
 - Pressure correction using Successive Over-Relaxation (SOR)
@@ -34,6 +34,7 @@ nm_method/
 ├── data/             # Simulation output data (*.npy files)
 ├── .gitignore        # Git ignore rules
 └── README.md         # This file
+└── LICENSE           # License information
 ```
 
 ## Requirements

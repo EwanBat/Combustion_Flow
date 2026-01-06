@@ -53,53 +53,67 @@ class Fluid:
         u_new = np.copy(self.u)
         v_new = np.copy(self.v)
         
-        i_slice = slice(2, -2); j_slice = slice(2, -2)
-        u_loc = self.u[i_slice, j_slice]; v_loc = self.v[i_slice, j_slice]
-        u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
-        v_pos = np.maximum(v_loc, 0); v_neg = np.minimum(v_loc, 0)
+        i_slice = slice(2, -2)
+        j_slice = slice(2, -2)
         
-        # shifts in x
-        u_m2_x = self.u[:-4, j_slice]
-        u_m1_x = self.u[1:-3, j_slice]
-        u_p1_x = self.u[3:-1, j_slice]
-        u_p2_x = self.u[4:, j_slice]
-        # shifts in y
-        u_m2_y = self.u[i_slice, :-4]
-        u_m1_y = self.u[i_slice, 1:-3]
-        u_p1_y = self.u[i_slice, 3:-1]
-        u_p2_y = self.u[i_slice, 4:]
-
-        # Update u component
-        adv_x_u = (u_pos * (u_loc - u_m1_x) * inv_dx +
-                    u_neg * (u_p1_x - u_loc) * inv_dx)
-        adv_y_u = (v_pos * (u_loc - u_m1_y) * inv_dy +
-                    v_neg * (u_p1_y - u_loc) * inv_dy)
-        diff_x_u = (-u_p2_x + 16.0*u_p1_x - 30.0*u_loc + 16.0*u_m1_x - u_m2_x) * inv_dx**2 / 12.0
-        diff_y_u = (-u_p2_y + 16.0*u_p1_y - 30.0*u_loc + 16.0*u_m1_y - u_m2_y) * inv_dy**2 / 12.0
+        # Extract local velocities
+        u_loc = self.u[i_slice, j_slice]
+        v_loc = self.v[i_slice, j_slice]
+        
+        # Lax-Wendroff half-step values for u-momentum
+        # x-direction half-steps
+        uphalf_x = 0.5 * (self.u[i_slice, j_slice] + self.u[3:-1, j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[3:-1, j_slice]**2 - self.u[i_slice, j_slice]**2)
+        umhalf_x = 0.5 * (self.u[1:-3, j_slice] + self.u[i_slice, j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[i_slice, j_slice]**2 - self.u[1:-3, j_slice]**2)
+        
+        # y-direction half-steps for v
+        vphalf_y = 0.5 * (self.v[i_slice, j_slice] + self.v[i_slice, 3:-1]) - \
+                   0.25 * self.dt * inv_dy * (self.v[i_slice, 3:-1]**2 - self.v[i_slice, j_slice]**2)
+        vmhalf_y = 0.5 * (self.v[i_slice, 1:-3] + self.v[i_slice, j_slice]) - \
+                   0.25 * self.dt * inv_dy * (self.v[i_slice, j_slice]**2 - self.v[i_slice, 1:-3]**2)
+        
+        # Cross-direction half-steps for u in y-direction
+        uphalf_y = 0.5 * (self.u[i_slice, j_slice] + self.u[i_slice, 3:-1]) - \
+                   0.25 * self.dt * inv_dy * (self.v[i_slice, 3:-1]*self.u[i_slice, 3:-1] - 
+                                              self.v[i_slice, j_slice]*self.u[i_slice, j_slice])
+        umhalf_y = 0.5 * (self.u[i_slice, 1:-3] + self.u[i_slice, j_slice]) - \
+                   0.25 * self.dt * inv_dy * (self.v[i_slice, j_slice]*self.u[i_slice, j_slice] - 
+                                              self.v[i_slice, 1:-3]*self.u[i_slice, 1:-3])
+        
+        # Lax-Wendroff advection terms for u
+        adv_x_u = 0.5 * inv_dx * (uphalf_x**2 - umhalf_x**2)
+        adv_y_u = 0.5 * inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
+        
+        # 4th order diffusion for u
+        diff_x_u = (-self.u[4:, j_slice] + 16.0*self.u[3:-1, j_slice] - 30.0*u_loc + 
+                    16.0*self.u[1:-3, j_slice] - self.u[:-4, j_slice]) * inv_dx**2 / 12.0
+        diff_y_u = (-self.u[i_slice, 4:] + 16.0*self.u[i_slice, 3:-1] - 30.0*u_loc + 
+                    16.0*self.u[i_slice, 1:-3] - self.u[i_slice, :-4]) * inv_dy**2 / 12.0
         diff_u = self.diffusivity * (diff_x_u + diff_y_u)
-        # src_term_u = src_u[i_slice, j_slice] if src_u is not None else 0.0
-        u_new[i_slice, j_slice] = u_loc + self.dt * (-adv_x_u - adv_y_u + diff_u )
-
-        # shifts in x
-        v_m2_x = self.v[:-4, j_slice]
-        v_m1_x = self.v[1:-3, j_slice]
-        v_p1_x = self.v[3:-1, j_slice]
-        v_p2_x = self.v[4:, j_slice]
-        # shifts in y
-        v_m2_y = self.v[i_slice, :-4]
-        v_m1_y = self.v[i_slice, 1:-3]
-        v_p1_y = self.v[i_slice, 3:-1]
-        v_p2_y = self.v[i_slice, 4:]
-
-        # Update v component
-        adv_x_v = (u_pos * (v_loc - v_m1_x) * inv_dx +
-                    u_neg * (v_p1_x - v_loc) * inv_dx)
-        adv_y_v = (v_pos * (v_loc - v_m1_y) * inv_dy +
-                    v_neg * (v_p1_y - v_loc) * inv_dy)
-        diff_x_v = (-v_p2_x + 16.0*v_p1_x - 30.0*v_loc + 16.0*v_m1_x - v_m2_x) * inv_dx**2 / 12.0
-        diff_y_v = (-v_p2_y + 16.0*v_p1_y - 30.0*v_loc + 16.0*v_m1_y - v_m2_y) * inv_dy**2 / 12.0
+        
+        u_new[i_slice, j_slice] = u_loc + self.dt * (-adv_x_u - adv_y_u + diff_u)
+        
+        # Lax-Wendroff half-step values for v-momentum
+        # Cross-direction half-steps for v in x-direction
+        vphalh_x = 0.5 * (self.v[i_slice, j_slice] + self.v[3:-1, j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[3:-1, j_slice]*self.v[3:-1, j_slice] - 
+                                              self.u[i_slice, j_slice]*self.v[i_slice, j_slice])
+        vmhalh_x = 0.5 * (self.v[1:-3, j_slice] + self.v[i_slice, j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[i_slice, j_slice]*self.v[i_slice, j_slice] - 
+                                              self.u[1:-3, j_slice]*self.v[1:-3, j_slice])
+        
+        # Lax-Wendroff advection terms for v
+        adv_x_v = 0.5 * inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
+        adv_y_v = 0.5 * inv_dy * (vphalf_y**2 - vmhalf_y**2)
+        
+        # 4th order diffusion for v
+        diff_x_v = (-self.v[4:, j_slice] + 16.0*self.v[3:-1, j_slice] - 30.0*v_loc + 
+                    16.0*self.v[1:-3, j_slice] - self.v[:-4, j_slice]) * inv_dx**2 / 12.0
+        diff_y_v = (-self.v[i_slice, 4:] + 16.0*self.v[i_slice, 3:-1] - 30.0*v_loc + 
+                    16.0*self.v[i_slice, 1:-3] - self.v[i_slice, :-4]) * inv_dy**2 / 12.0
         diff_v = self.diffusivity * (diff_x_v + diff_y_v)
-        # src_term_v = src_v[i_slice, j_slice] if src_v is not None else 0.0
+        
         v_new[i_slice, j_slice] = v_loc + self.dt * (-adv_x_v - adv_y_v + diff_v)
 
         return u_new, v_new
@@ -262,18 +276,24 @@ class Fluid:
             for j in range(2, m-2):
                 u_loc = u[i, j]
                 v_loc = v[i, j]
+
+                uphalf_x = 0.5 * (u[i, j] + u[i+1, j]) - 0.25 * dt * inv_dx * (u[i+1, j]**2 - u[i, j]**2)
+                umhalf_x = 0.5 * (u[i-1, j] + u[i, j]) - 0.25 * dt * inv_dx * (u[i, j]**2 - u[i-1, j]**2)
+                vphalf_y = 0.5 * (v[i, j] + v[i, j+1]) - 0.25 * dt * inv_dy * (v[i, j+1]**2 - v[i, j]**2)
+                vmhalf_y = 0.5 * (v[i, j-1] + v[i, j]) - 0.25 * dt * inv_dy * (v[i, j]**2 - v[i, j-1]**2)
                 
-                u_pos = max(u_loc, 0.0)
-                u_neg = min(u_loc, 0.0)
-                v_pos = max(v_loc, 0.0)
-                v_neg = min(v_loc, 0.0)
-                
-                # Advection for u
-                adv_x_u = (u_pos * (u_loc - u[i-1, j]) * inv_dx +
-                          u_neg * (u[i+1, j] - u_loc) * inv_dx)
-                adv_y_u = (v_pos * (u_loc - u[i, j-1]) * inv_dy +
-                          v_neg * (u[i, j+1] - u_loc) * inv_dy)
-                
+                vphalh_x = 0.5 * (v[i, j] + v[i+1, j]) - 0.25 * dt * inv_dx * (u[i+1, j]*v[i+1, j] - u[i, j]*v[i, j])
+                vmhalh_x = 0.5 * (v[i-1, j] + v[i, j]) - 0.25 * dt * inv_dx * (u[i, j]*v[i, j] - u[i-1, j]*v[i-1, j])
+                uphalf_y = 0.5 * (u[i, j] + u[i, j+1]) - 0.25 * dt * inv_dy * (v[i, j+1]*u[i, j+1] - v[i, j]*u[i, j])
+                umhalf_y = 0.5 * (u[i, j-1] + u[i, j]) - 0.25 * dt * inv_dy * (v[i, j]*u[i, j] - v[i, j-1]*u[i, j-1])
+
+                # Advection terms for u and v using Lax-Wendroff scheme
+                adv_x_u = 0.5 * inv_dx * (uphalf_x**2 - umhalf_x**2)
+                adv_y_u = 0.5 * inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
+
+                adv_x_v = 0.5 * inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
+                adv_y_v = 0.5 * inv_dy * (vphalf_y**2 - vmhalf_y**2)
+
                 # Diffusion for u (4th order)
                 diff_x_u = (-u[i+2, j] + 16.0*u[i+1, j] - 30.0*u_loc + 
                            16.0*u[i-1, j] - u[i-2, j]) * inv_dx**2 / 12.0
@@ -282,12 +302,6 @@ class Fluid:
                 diff_u = diffusivity * (diff_x_u + diff_y_u)
                 
                 u_new[i, j] = u_loc + dt * (-adv_x_u - adv_y_u + diff_u)
-                
-                # Advection for v
-                adv_x_v = (u_pos * (v_loc - v[i-1, j]) * inv_dx +
-                          u_neg * (v[i+1, j] - v_loc) * inv_dx)
-                adv_y_v = (v_pos * (v_loc - v[i, j-1]) * inv_dy +
-                          v_neg * (v[i, j+1] - v_loc) * inv_dy)
                 
                 # Diffusion for v (4th order)
                 diff_x_v = (-v[i+2, j] + 16.0*v[i+1, j] - 30.0*v_loc + 
