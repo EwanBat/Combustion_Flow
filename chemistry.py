@@ -75,6 +75,8 @@ class ChemistryManager:
         self.reaction_rates = {name: np.zeros_like(next(iter(chem_dict.values())).Y) for name in chem_dict}
         self.n = n
         self.m = m
+        self.i_slice = slice(2, -2)
+        self.j_slice = slice(2, -2)
 
     def initiate_steps(self, dx, dy):
         self.inv_dx = 1/dx
@@ -270,27 +272,26 @@ class ChemistryManager:
         # ============================================================================
         # GRID SETUP: Define interior domain for 4th-order stencil
         # ============================================================================
-        i = slice(2, -2); j = slice(2, -2)
-        phi_loc = phi[i, j]
+        phi_loc = phi[self.i_slice, self.j_slice]
         
         # ============================================================================
         # FIELD EXTRACTION: Get shifted values for spatial derivatives
         # ============================================================================
         # Shifts in x-direction
-        phi_m2_x = phi[:-4, j]
-        phi_m1_x = phi[1:-3, j]
-        phi_p1_x = phi[3:-1, j]
-        phi_p2_x = phi[4:, j]
+        phi_m2_x = phi[:-4, self.j_slice]
+        phi_m1_x = phi[1:-3, self.j_slice]
+        phi_p1_x = phi[3:-1, self.j_slice]
+        phi_p2_x = phi[4:, self.j_slice]
         # Shifts in y-direction
-        phi_m2_y = phi[i, :-4]
-        phi_m1_y = phi[i, 1:-3]
-        phi_p1_y = phi[i, 3:-1]
-        phi_p2_y = phi[i, 4:]
+        phi_m2_y = phi[self.i_slice, :-4]
+        phi_m1_y = phi[self.i_slice, 1:-3]
+        phi_p1_y = phi[self.i_slice, 3:-1]
+        phi_p2_y = phi[self.i_slice, 4:]
 
         # ============================================================================
         # ADVECTION: Compute upwind advective fluxes
         # ============================================================================
-        u_loc = u[i, j]; v_loc = v[i, j]
+        u_loc = u[self.i_slice, self.j_slice]; v_loc = v[self.i_slice, self.j_slice]
         u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
         adv_x = (u_pos * (phi_loc - phi_m1_x) * self.inv_dx +
                  u_neg * (phi_p1_x - phi_loc) * self.inv_dx)
@@ -309,7 +310,7 @@ class ChemistryManager:
         # ============================================================================
         # SOURCE TERM: Add chemical reaction source
         # ============================================================================
-        src = source[i, j] if source is not None else 0.0
+        src = source[self.i_slice, self.j_slice] if source is not None else 0.0
         
         return -adv_x - adv_y + diff + src
 
@@ -538,7 +539,7 @@ def _compute_reaction_rates_numba(T_field, Y_O2, Y_CH4, M_O2, M_CH4, T_A, A, rho
             # ===================================================================
             T = T_field[i, j]
             C_O2 = (Y_O2[i, j] / M_O2) * rho
-            C_CH4 = (Y_CH4[i, j] / M_CH4) / rho
+            C_CH4 = (Y_CH4[i, j] / M_CH4) * rho
             
             # ===================================================================
             # ARRHENIUS RATE: Compute k = A * exp(-T_A/T) * [CH4] * [O2]^2

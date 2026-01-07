@@ -248,7 +248,7 @@ class System:
                 adv_v_y = v_loc * (self.fluid.v[i, j+1] - v_loc) / self.dy
             
             # Asymmetric diffusion (one-sided in x-direction)
-            diffusion_v = self.fluid.diffusivity * (
+            diffusion_v = self.fluid.nu * (
                 (2*self.fluid.v[i+1, j] - 2*v_loc) / self.dx**2 +
                 (self.fluid.v[i, j+1] - 2*v_loc + self.fluid.v[i, j-1]) / self.dy**2
             )
@@ -261,7 +261,7 @@ class System:
         self.fluid.SOR_pressure_solver(u_star, v_star)
         
         # === STEP 3: CORRECT VELOCITIES WITH PRESSURE GRADIENT ===
-        u_new, v_new = self.fluid.correction_velocity(u_star, v_star)
+        u_new, v_new = self.fluid.correction_velocity(u_star, v_star, self.dt, self.inv_dx, self.inv_dy, self.n, self.m)
         self.fluid.apply_velocity_bcs(u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
 
         # === STEP 4: UPDATE SCALARS (TEMPERATURE, SPECIES) ===
@@ -799,7 +799,7 @@ class System:
                 adv_v_y = v_loc * (self.fluid.v[i, j+1] - v_loc) / self.dy
             
             # Asymmetric diffusion (one-sided in x-direction)
-            diffusion_v = self.fluid.diffusivity * (
+            diffusion_v = self.fluid.nu * (
                 (2*self.fluid.v[i+1, j] - 2*v_loc) / self.dx**2 +
                 (self.fluid.v[i, j+1] - 2*v_loc + self.fluid.v[i, j-1]) / self.dy**2
             )

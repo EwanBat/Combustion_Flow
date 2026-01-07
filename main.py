@@ -12,13 +12,13 @@ def main():
     viscosity = const.nu  # Dynamic viscosity
 
     # Initialize velocity field (example: uniform flow in x-direction)
-    n, m = 200, 200  # Grid size
+    n, m = 75, 75  # Grid size
     
     # Create Fluid object
     u_initial = np.zeros((n, m))  # m/s
     v_initial = np.zeros((n, m))  # m/s
     P_initial = np.zeros((n, m))  # Pa
-    fluid = Fluid(n=n, m=m, diffusivity=viscosity)
+    fluid = Fluid(n=n, m=m, diffusivity=viscosity, rho=density)
     fluid.velocity_initialization(u_initial, v_initial, P_initial)
 
     # Define chemistry properties for CH4 and O2
@@ -50,15 +50,15 @@ def main():
     total_time = 6e-3
     system = System(dt_data=dt_data, total_time=total_time, n=n, m=m, fluid=fluid, ChemicalManager=chemistry_manager)
     system.print_caracteristics()
-    # parallel = input("Run simulation with Numba parallelization? (y/n): ").strip().lower() == 'y'
-    # system.run(parallel=parallel)
+    parallel = input("Run simulation with Numba parallelization? (y/n): ").strip().lower() == 'y'
+    system.run(parallel=parallel)
     system.plot_concentration(save = True)
     system.plot_temperature(save = True)
     system.plot_velocity_magnitude(save = True)
     system.plot_divergence(save = True)
-    system.animation_concentration(species="CO2", save=True)
-    system.animation_temperature(save=True)
-    # system.flow_field_info()
+    # system.animation_concentration(species="CO2", save=True)
+    # system.animation_temperature(save=True)
+    system.flow_field_info()
 
 if __name__ == "__main__":
     main()

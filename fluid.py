@@ -21,7 +21,7 @@ class Fluid:
         dt, inv_dx, inv_dy (float): time step and inverse grid spacings (set later).
     """
     
-    def __init__(self, n, m, diffusivity):
+    def __init__(self, n, m, diffusivity, rho):
         """Initialize basic solver parameters.
 
         Args:
@@ -35,7 +35,10 @@ class Fluid:
         """
         self.n = n
         self.m = m
-        self.diffusivity = diffusivity
+        self.nu = diffusivity
+        self.rho = rho
+        self.i_slice = slice(2, -2)
+        self.j_slice = slice(2, -2)
 
     def velocity_initialization(self, u_initial, v_initial, P_initial):
         """Initialize the velocity field."""
@@ -53,37 +56,34 @@ class Fluid:
         u_new = np.copy(self.u)
         v_new = np.copy(self.v)
         
-        i_slice = slice(2, -2)
-        j_slice = slice(2, -2)
-        
         # ============================================================================
         # INITIALIZATION: Extract local velocity fields
         # ============================================================================
-        u_loc = self.u[i_slice, j_slice]
-        v_loc = self.v[i_slice, j_slice]
+        u_loc = self.u[self.i_slice, self.j_slice]
+        v_loc = self.v[self.i_slice, self.j_slice]
         
         # ============================================================================
         # U-MOMENTUM: Lax-Wendroff half-step values computation
         # ============================================================================
         # X-direction half-steps for u
-        uphalf_x = 0.5 * (self.u[i_slice, j_slice] + self.u[3:-1, j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[3:-1, j_slice]**2 - self.u[i_slice, j_slice]**2)
-        umhalf_x = 0.5 * (self.u[1:-3, j_slice] + self.u[i_slice, j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[i_slice, j_slice]**2 - self.u[1:-3, j_slice]**2)
+        uphalf_x = 0.5 * (self.u[self.i_slice, self.j_slice] + self.u[3:-1, self.j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[3:-1, self.j_slice]**2 - self.u[self.i_slice, self.j_slice]**2)
+        umhalf_x = 0.5 * (self.u[1:-3, self.j_slice] + self.u[self.i_slice, self.j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[self.i_slice, self.j_slice]**2 - self.u[1:-3, self.j_slice]**2)
         
         # Y-direction half-steps for v (needed for cross-terms)
-        vphalf_y = 0.5 * (self.v[i_slice, j_slice] + self.v[i_slice, 3:-1]) - \
-                   0.25 * self.dt * inv_dy * (self.v[i_slice, 3:-1]**2 - self.v[i_slice, j_slice]**2)
-        vmhalf_y = 0.5 * (self.v[i_slice, 1:-3] + self.v[i_slice, j_slice]) - \
-                   0.25 * self.dt * inv_dy * (self.v[i_slice, j_slice]**2 - self.v[i_slice, 1:-3]**2)
+        vphalf_y = 0.5 * (self.v[self.i_slice, self.j_slice] + self.v[self.i_slice, 3:-1]) - \
+                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, 3:-1]**2 - self.v[self.i_slice, self.j_slice]**2)
+        vmhalf_y = 0.5 * (self.v[self.i_slice, 1:-3] + self.v[self.i_slice, self.j_slice]) - \
+                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, self.j_slice]**2 - self.v[self.i_slice, 1:-3]**2)
         
         # Cross-direction half-steps for u in y-direction
-        uphalf_y = 0.5 * (self.u[i_slice, j_slice] + self.u[i_slice, 3:-1]) - \
-                   0.25 * self.dt * inv_dy * (self.v[i_slice, 3:-1]*self.u[i_slice, 3:-1] - 
-                                              self.v[i_slice, j_slice]*self.u[i_slice, j_slice])
-        umhalf_y = 0.5 * (self.u[i_slice, 1:-3] + self.u[i_slice, j_slice]) - \
-                   0.25 * self.dt * inv_dy * (self.v[i_slice, j_slice]*self.u[i_slice, j_slice] - 
-                                              self.v[i_slice, 1:-3]*self.u[i_slice, 1:-3])
+        uphalf_y = 0.5 * (self.u[self.i_slice, self.j_slice] + self.u[self.i_slice, 3:-1]) - \
+                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, 3:-1]*self.u[self.i_slice, 3:-1] - 
+                                              self.v[self.i_slice, self.j_slice]*self.u[self.i_slice, self.j_slice])
+        umhalf_y = 0.5 * (self.u[self.i_slice, 1:-3] + self.u[self.i_slice, self.j_slice]) - \
+                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, self.j_slice]*self.u[self.i_slice, self.j_slice] - 
+                                              self.v[self.i_slice, 1:-3]*self.u[self.i_slice, 1:-3])
         
         # ============================================================================
         # U-MOMENTUM: Advection terms (Lax-Wendroff scheme)
@@ -94,27 +94,27 @@ class Fluid:
         # ============================================================================
         # U-MOMENTUM: Diffusion terms (4th order accurate)
         # ============================================================================
-        diff_x_u = (-self.u[4:, j_slice] + 16.0*self.u[3:-1, j_slice] - 30.0*u_loc + 
-                    16.0*self.u[1:-3, j_slice] - self.u[:-4, j_slice]) * inv_dx**2 / 12.0
-        diff_y_u = (-self.u[i_slice, 4:] + 16.0*self.u[i_slice, 3:-1] - 30.0*u_loc + 
-                    16.0*self.u[i_slice, 1:-3] - self.u[i_slice, :-4]) * inv_dy**2 / 12.0
-        diff_u = self.diffusivity * (diff_x_u + diff_y_u)
+        diff_x_u = (-self.u[4:, self.j_slice] + 16.0*self.u[3:-1, self.j_slice] - 30.0*u_loc + 
+                    16.0*self.u[1:-3, self.j_slice] - self.u[:-4, self.j_slice]) * inv_dx**2 / 12.0
+        diff_y_u = (-self.u[self.i_slice, 4:] + 16.0*self.u[self.i_slice, 3:-1] - 30.0*u_loc + 
+                    16.0*self.u[self.i_slice, 1:-3] - self.u[self.i_slice, :-4]) * inv_dy**2 / 12.0
+        diff_u = self.nu * (diff_x_u + diff_y_u)
         
         # ============================================================================
         # U-MOMENTUM: Time integration update
         # ============================================================================
-        u_new[i_slice, j_slice] = u_loc + self.dt * (-adv_x_u - adv_y_u + diff_u)
+        u_new[self.i_slice, self.j_slice] = u_loc + self.dt * (-adv_x_u - adv_y_u + diff_u)
         
         # ============================================================================
         # V-MOMENTUM: Lax-Wendroff half-step values computation
         # ============================================================================
         # Cross-direction half-steps for v in x-direction
-        vphalh_x = 0.5 * (self.v[i_slice, j_slice] + self.v[3:-1, j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[3:-1, j_slice]*self.v[3:-1, j_slice] - 
-                                              self.u[i_slice, j_slice]*self.v[i_slice, j_slice])
-        vmhalh_x = 0.5 * (self.v[1:-3, j_slice] + self.v[i_slice, j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[i_slice, j_slice]*self.v[i_slice, j_slice] - 
-                                              self.u[1:-3, j_slice]*self.v[1:-3, j_slice])
+        vphalh_x = 0.5 * (self.v[self.i_slice, self.j_slice] + self.v[3:-1, self.j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[3:-1, self.j_slice]*self.v[3:-1, self.j_slice] - 
+                                              self.u[self.i_slice, self.j_slice]*self.v[self.i_slice, self.j_slice])
+        vmhalh_x = 0.5 * (self.v[1:-3, self.j_slice] + self.v[self.i_slice, self.j_slice]) - \
+                   0.25 * self.dt * inv_dx * (self.u[self.i_slice, self.j_slice]*self.v[self.i_slice, self.j_slice] - 
+                                              self.u[1:-3, self.j_slice]*self.v[1:-3, self.j_slice])
         
         # ============================================================================
         # V-MOMENTUM: Advection terms (Lax-Wendroff scheme)
@@ -125,16 +125,16 @@ class Fluid:
         # ============================================================================
         # V-MOMENTUM: Diffusion terms (4th order accurate)
         # ============================================================================
-        diff_x_v = (-self.v[4:, j_slice] + 16.0*self.v[3:-1, j_slice] - 30.0*v_loc + 
-                    16.0*self.v[1:-3, j_slice] - self.v[:-4, j_slice]) * inv_dx**2 / 12.0
-        diff_y_v = (-self.v[i_slice, 4:] + 16.0*self.v[i_slice, 3:-1] - 30.0*v_loc + 
-                    16.0*self.v[i_slice, 1:-3] - self.v[i_slice, :-4]) * inv_dy**2 / 12.0
-        diff_v = self.diffusivity * (diff_x_v + diff_y_v)
+        diff_x_v = (-self.v[4:, self.j_slice] + 16.0*self.v[3:-1, self.j_slice] - 30.0*v_loc + 
+                    16.0*self.v[1:-3, self.j_slice] - self.v[:-4, self.j_slice]) * inv_dx**2 / 12.0
+        diff_y_v = (-self.v[self.i_slice, 4:] + 16.0*self.v[self.i_slice, 3:-1] - 30.0*v_loc + 
+                    16.0*self.v[self.i_slice, 1:-3] - self.v[self.i_slice, :-4]) * inv_dy**2 / 12.0
+        diff_v = self.nu * (diff_x_v + diff_y_v)
         
         # ============================================================================
         # V-MOMENTUM: Time integration update
         # ============================================================================
-        v_new[i_slice, j_slice] = v_loc + self.dt * (-adv_x_v - adv_y_v + diff_v)
+        v_new[self.i_slice, self.j_slice] = v_loc + self.dt * (-adv_x_v - adv_y_v + diff_v)
 
         return u_new, v_new
 
@@ -217,18 +217,16 @@ class Fluid:
         # ============================================================================
         # DIVERGENCE COMPUTATION: Calculate velocity divergence (∇·u*)
         # ============================================================================
-        i_slice = slice(2, -2)
-        j_slice = slice(2, -2)
         
         # Central differences for divergence
-        du_dx = 0.5 * self.inv_dx * (u[3:-1, j_slice] - u[1:-3, j_slice])
-        dv_dy = 0.5 * self.inv_dy * (v[i_slice, 3:-1] - v[i_slice, 1:-3])
+        du_dx = 0.5 * self.inv_dx * (u[3:-1, self.j_slice] - u[1:-3, self.j_slice])
+        dv_dy = 0.5 * self.inv_dy * (v[self.i_slice, 3:-1] - v[self.i_slice, 1:-3])
         
         # ============================================================================
         # RHS CONSTRUCTION: Build right-hand side (ρ/Δt)∇·u*
         # ============================================================================
         f = np.zeros_like(self.P)
-        f[i_slice, j_slice] = (const.rho / self.dt) * (du_dx + dv_dy)
+        f[self.i_slice, self.j_slice] = (self.rho / self.dt) * (du_dx + dv_dy)
 
         # ============================================================================
         # SOR SOLVER INITIALIZATION: Setup parameters and arrays
@@ -238,7 +236,7 @@ class Fluid:
         tolerance = 1e-6
         max_iterations = 2000
 
-        f_in = f[i_slice, j_slice]
+        f_in = f[self.i_slice, self.j_slice]
         denom = 2.0 * (self.inv_dx**2 + self.inv_dy**2)
 
         # ============================================================================
@@ -249,10 +247,10 @@ class Fluid:
         mask_black = ~mask_red
 
         def compute_Pgs_local(P):
-            P_ip = P[3:-1, j_slice]
-            P_im = P[1:-3, j_slice]
-            P_jp = P[i_slice, 3:-1]
-            P_jm = P[i_slice, 1:-3]
+            P_ip = P[3:-1, self.j_slice]
+            P_im = P[1:-3, self.j_slice]
+            P_jp = P[self.i_slice, 3:-1]
+            P_jm = P[self.i_slice, 1:-3]
             laplacian = (P_ip + P_im) * self.inv_dx**2 + (P_jp + P_jm) * self.inv_dy**2
             return (laplacian - f_in) / denom
 
@@ -261,7 +259,7 @@ class Fluid:
         # ============================================================================
         for iteration in range(max_iterations):
             P_old = P_new.copy()
-            P_in = P_new[i_slice, j_slice]
+            P_in = P_new[self.i_slice, self.j_slice]
 
             # Update red points
             P_gs = compute_Pgs_local(P_new)
@@ -293,19 +291,17 @@ class Fluid:
 
         self.P = P_new
     
-    def correction_velocity(self, u_star, v_star):
+    def correction_velocity(self, u_star, v_star, dt, inv_dx, inv_dy, n, m):
         """
         Correct intermediate velocity: u^(n+1) = u* - (Δt/ρ)∇P
         Cette correction REMPLACE u* et v*, pas s'ajoute à un calcul précédent
         """
-        i_slice = slice(2, -2)
-        j_slice = slice(2, -2)
         
         # ============================================================================
         # PRESSURE GRADIENT: Compute ∇P using central differences
         # ============================================================================
-        dp_dx = (self.P[3:-1, j_slice] - self.P[1:-3, j_slice]) * self.inv_dx * 0.5
-        dp_dy = (self.P[i_slice, 3:-1] - self.P[i_slice, 1:-3]) * self.inv_dy * 0.5
+        dp_dx = (self.P[3:-1, self.j_slice] - self.P[1:-3, self.j_slice]) * self.inv_dx * 0.5
+        dp_dy = (self.P[self.i_slice, 3:-1] - self.P[self.i_slice, 1:-3]) * self.inv_dy * 0.5
 
         # ============================================================================
         # VELOCITY CORRECTION: Apply pressure gradient to obtain divergence-free field
@@ -313,8 +309,32 @@ class Fluid:
         u_new = np.copy(u_star)
         v_new = np.copy(v_star)
         
-        u_new[i_slice, j_slice] = u_star[i_slice, j_slice] - (self.dt / const.rho) * dp_dx
-        v_new[i_slice, j_slice] = v_star[i_slice, j_slice] - (self.dt / const.rho) * dp_dy
+        u_new[self.i_slice, self.j_slice] = u_star[self.i_slice, self.j_slice] - (self.dt / self.rho) * dp_dx
+        v_new[self.i_slice, self.j_slice] = v_star[self.i_slice, self.j_slice] - (self.dt / self.rho) * dp_dy
+
+        # ======================================================================
+        # LEFT BOUNDARY: Special handling for inlet boundary
+        # ======================================================================
+        for i in range(2):
+            for j in range(2, m-2):
+                v_loc = v_star[i, j]
+                u_new[i, j] = 0.0
+                
+                # Upwind advection for v
+                if v_loc >= 0:
+                    adv_v_y = v_loc * (v_loc - v_star[i, j-1]) * inv_dy
+                else:
+                    adv_v_y = v_loc * (v_star[i, j+1] - v_loc) * inv_dy
+                
+                # Diffusion for v at boundary
+                diffusion_v = self.nu * (
+                    (2*v_star[i+1, j] - 2*v_loc) * inv_dx**2 +
+                    (v_star[i, j+1] - 2*v_loc + v_star[i, j-1]) * inv_dy**2
+                )
+                
+                # Pressure gradient at boundary
+                dp_dy_local = (self.P[2, j] - self.P[0, j]) * inv_dy * 0.5
+                v_new[i, j] = v_loc + dt * (-adv_v_y + diffusion_v - (dt / self.rho) * dp_dy_local)
 
         return u_new, v_new
 
@@ -390,11 +410,11 @@ class Fluid:
     def adv_diff_interior_numba(self, inv_dx, inv_dy, src_u=None, src_v=None):
         """Numba-accelerated version of advection-diffusion computation."""
         return self._adv_diff_kernel(self.u, self.v, self.dt, inv_dx, inv_dy, 
-                                     self.diffusivity, self.n, self.m)
+                                     self.nu, self.n, self.m)
     
     @staticmethod
     @jit(nopython=True, parallel=True)
-    def _sor_kernel(P, u, v, inv_dx, inv_dy, rho, dt, omega, tolerance, max_iterations, n, m):
+    def _sor_kernel(P, u, v, inv_dx, inv_dy, dt, omega, tolerance, max_iterations, n, m):
         """Numba SOR kernel pour fluide incompressible."""
         P_new = np.copy(P)
         
@@ -406,7 +426,7 @@ class Fluid:
             for j in range(2, m-2):
                 du_dx = 0.5 * inv_dx * (u[i+1, j] - u[i-1, j])
                 dv_dy = 0.5 * inv_dy * (v[i, j+1] - v[i, j-1])
-                f[i, j] = (rho / dt) * (du_dx + dv_dy)
+                f[i, j] = (const.rho / dt) * (du_dx + dv_dy)
         
         denom = 2.0 * (inv_dx**2 + inv_dy**2)
         
@@ -460,8 +480,8 @@ class Fluid:
         return P_new
     
     def SOR_pressure_solver_numba(self, u, v):
-        self.P = self._sor_kernel(self.P, u, v, self.inv_dx, self.inv_dy, 
-                                const.rho, self.dt, 1.5, 1e-6, 2000, 
+        self.P = self._sor_kernel(self.P, u, v, self.inv_dx, self.inv_dy,
+                                  self.dt, 1.5, 1e-6, 2000, 
                                 self.n, self.m)
     
     @staticmethod
