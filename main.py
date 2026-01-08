@@ -12,7 +12,7 @@ def main():
     viscosity = const.nu  # Dynamic viscosity
 
     # Initialize velocity field (example: uniform flow in x-direction)
-    n, m = 100,100  # Grid size
+    n, m = 150, 150  # Grid size
     
     # Create Fluid object
     u_initial = np.zeros((n, m))  # m/s
@@ -54,11 +54,11 @@ def main():
     system.run(parallel=parallel)
     system.plot_concentration(save = True)
     system.plot_temperature(save = True)
-    # system.plot_velocity_magnitude(save = True)
-    # system.plot_divergence(save = True)
+    system.plot_velocity_magnitude(save = True)
+    system.plot_divergence(save = True)
     plt.show()
-    # system.animation_concentration(species="N2", save=True)
-    # system.animation_temperature(save=True)
+    system.animation_concentration(species="N2", save=True)
+    system.animation_temperature(save=True)
     system.flow_field_info()
 
 if __name__ == "__main__":

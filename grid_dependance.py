@@ -27,6 +27,8 @@ def main():
         'H2O': Chemistry(density=density, molar_mass=const.molar_mass['H2O'], diffusivity=viscosity),
         'N2': Chemistry(density=density, molar_mass=const.molar_mass['N2'], diffusivity=viscosity)
     }
+    parallel = True
+
     for n in L_n:
         m = n
 
@@ -55,34 +57,41 @@ def main():
 
         system = System(dt_data=dt_data, total_time=total_time, n=n, m=m, fluid=fluid, ChemicalManager=chemistry_manager)
         system.print_caracteristics()
-        parallel = True
         system.run(parallel=parallel)
+        system.flow_field_info()
 
         L_strainrate.append(system.strain_rate_left)
         L_diffthick.append(system.diffusive_thickness)
         L_maxtemp.append(np.max(system.T))
     
     # Plotting results
-    plt.figure()
-    plt.loglog(L_n, L_strainrate, marker='o')
+    plt.figure(figsize=(8, 6))
+    plt.plot(L_n, L_strainrate, marker='o')
     plt.xlabel('Grid Size (n)')
     plt.ylabel('Strain Rate on Left Wall (1/s)')
     plt.title('Strain Rate vs Grid Size')
     plt.grid(True)
+    plt.tight_layout()
     plt.savefig('strain_rate_vs_grid_size.png')
 
-    plt.figure()
-    plt.loglog(L_n, L_diffthick, marker='o')
+    plt.figure(figsize=(8, 6))
+    plt.plot(L_n, L_diffthick, marker='o')
     plt.xlabel('Grid Size (n)')
     plt.ylabel('Diffusive Zone Thickness on Left Wall (m)')
     plt.title('Diffusive Zone Thickness vs Grid Size')
     plt.grid(True)
+    plt.tight_layout()
     plt.savefig('diffusive_thickness_vs_grid_size.png')
 
-    plt.figure()
-    plt.loglog(L_n, L_maxtemp, marker='o')
+    plt.figure(figsize=(8, 6))
+    plt.plot(L_n, L_maxtemp, marker='o')
     plt.xlabel('Grid Size (n)')
     plt.ylabel('Maximum Temperature (K)')
+    plt.yscale('log')
     plt.title('Maximum Temperature vs Grid Size')
     plt.grid(True)
+    plt.tight_layout()
     plt.savefig('max_temperature_vs_grid_size.png')
+
+if __name__ == "__main__":
+    main()

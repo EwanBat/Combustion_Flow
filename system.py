@@ -661,20 +661,31 @@ class System:
     
     def flow_field_info(self):
         # Calculate the strain rate on the left wall
-        dv_dy_left = (self.fluid.v[0, 2:-2] - self.fluid.v[0, 0:-4]) / (2 * self.dy)
+        v = np.load("data//simulation_data_v.npy")
+        dv_dy_left = (v[0, 2:-2] - v[0, 0:-4]) / (2 * self.dy)
         self.strain_rate_left = np.max(np.abs(dv_dy_left))
 
-        # Measure the thickness of the diffusive zone on the left wall using the N2 species between Y=0.1 and Y=0.9
-        Y_N2 = self.ChemicalManager.chemistries['N2'].Y
-        Y_N2_left = Y_N2[:, 2:-2]
-        Y_N2_min = 0.1 * np.max(Y_N2_left[:, :])
-        Y_N2_max = 0.9 * np.max(Y_N2_left[:, :])
-        indices_min = np.where(Y_N2_left[:, :] >= Y_N2_min)[0]
-        indices_max = np.where(Y_N2_left[:, :] <= Y_N2_max)[0]
-        if indices_min.size > 0 and indices_max.size > 0:
-            y_min = indices_min[0] * self.dy
-            y_max = indices_max[-1] * self.dy
-            self.diffusive_thickness = y_max - y_min
+        # Measure the thickness along x of the diffusive zone on the left wall using the N2 species between Y=0.1 N2max and Y=0.9 N2max
+        Y_N2 = np.load("data//simulation_data_Y_N2.npy")
+        Y_N2_max = np.max(Y_N2)
+        x_coords = np.linspace(0.0, self.Lx, self.n)
+        for j in range(self.m):
+            ind_10 = []
+            ind_90 = []
+            Y_profile = Y_N2[:,j]
+            for i in range(self.n):
+                if Y_profile[i] >= 0.1 * Y_N2_max:
+                    ind_10.append(i)
+                if Y_profile[i] <= 0.9 * Y_N2_max:
+                    ind_90.append(i)
+            if ind_10 and ind_90:
+                x_10 = x_coords[ind_10[0]]
+                x_90 = x_coords[ind_90[-1]]
+                thickness = x_90 - x_10
+                if j == 0:
+                    self.diffusive_thickness = thickness
+                else:
+                    self.diffusive_thickness = min(self.diffusive_thickness, thickness)  
         
         print("=" * 50)
         print("FLOW FIELD INFORMATION")
