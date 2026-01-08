@@ -97,7 +97,7 @@ class System:
         self.ChemicalManager = ChemicalManager
 
         self.fluid.initiate_steps(self.dt, self.dx, self.dy)
-        self.ChemicalManager.initiate_steps(self.dx, self.dy)
+        self.ChemicalManager.initiate_steps(self.dt, self.dx, self.dy)
 
         # === Temperature field initialization === Circular heated rod in center
 
@@ -232,37 +232,15 @@ class System:
         # === STEP 1: PREDICT VELOCITIES (u*, v*) ===
         
         # Update interior velocity components using advection-diffusion
-        u_star, v_star = self.fluid.adv_diff_interior(
-            self.inv_dx, self.inv_dy, self.dt)
-    
-        # --- Left boundary (i=0) special handling ---
-        i = 0
-        for j in range(1, self.m-1):
-            v_loc = self.fluid.v[i, j]
-            u_star[i, j] = 0  # No-slip on left boundary
-            
-            # Upwind advection for v-component
-            if v_loc >= 0:
-                adv_v_y = v_loc * (v_loc - self.fluid.v[i, j-1]) / self.dy
-            else:
-                adv_v_y = v_loc * (self.fluid.v[i, j+1] - v_loc) / self.dy
-            
-            # Asymmetric diffusion (one-sided in x-direction)
-            diffusion_v = self.fluid.nu * (
-                (2*self.fluid.v[i+1, j] - 2*v_loc) / self.dx**2 +
-                (self.fluid.v[i, j+1] - 2*v_loc + self.fluid.v[i, j-1]) / self.dy**2
-            )
-            
-            v_star[i, j] = v_loc + self.dt * (-adv_v_y + diffusion_v)
-
-        self.fluid.apply_velocity_bcs(u_star, v_star, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+        u_star, v_star = self.fluid.adv_diff_interior()
+        self.fluid.apply_velocity_bcs(self.fluid.u, self.fluid.v, u_star, v_star, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
 
         # === STEP 2: SOLVE PRESSURE POISSON EQUATION ===
         self.fluid.SOR_pressure_solver(u_star, v_star)
         
         # === STEP 3: CORRECT VELOCITIES WITH PRESSURE GRADIENT ===
-        u_new, v_new = self.fluid.correction_velocity(u_star, v_star, self.dt, self.inv_dx, self.inv_dy, self.n, self.m)
-        self.fluid.apply_velocity_bcs(u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+        u_new, v_new = self.fluid.correction_velocity(u_star, v_star)
+        self.fluid.apply_velocity_bcs(u_star, v_star, u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow, True)
 
         # === STEP 4: UPDATE SCALARS (TEMPERATURE, SPECIES) ===
         # Initialiser les taux de réaction
@@ -454,9 +432,7 @@ class System:
         
         if save:
             plt.savefig(filename, dpi=300, bbox_inches='tight')
-        
-        plt.show()
- 
+         
     def plot_temperature(self, load_from="data//simulation_data", save=False, filename="temperature.png"):
         """
         Plot temperature field distribution.
@@ -488,8 +464,6 @@ class System:
         if save:
             plt.savefig(filename)
         
-        plt.show()
-
     def plot_velocity_magnitude(self, load_from="data//simulation_data", save=False, filename="velocity_magnitude.png"):
         """
         Plot velocity magnitude with vector field overlay.
@@ -539,8 +513,6 @@ class System:
         if save:
             plt.savefig(filename)
         
-        plt.show()
-
     def plot_divergence(self, load_from="data//simulation_data", save=False, filename="divergence.png"):
         """
         Plot divergence of the velocity field.
@@ -583,8 +555,6 @@ class System:
         if save:
             plt.savefig(filename)
         
-        plt.show()
-
     def animation_concentration(self, load_from="simulation_data", species='CH4', interval=200, save=False, filename="concentration_animation.gif"):
         """
         Create an animation of species concentration over time.
@@ -648,7 +618,6 @@ class System:
             ani.save(filename, writer='pillow', fps=30)
 
         print("Animation complete.")
-        plt.show()
     
     def animation_temperature(self, load_from="simulation_data", interval=200, save=False, filename="temperature_animation.gif"):
         """
@@ -689,29 +658,29 @@ class System:
             ani.save(filename, writer='pillow', fps=30)
 
         print("Temperature animation complete.")
-        plt.show()
     
     def flow_field_info(self):
         # Calculate the strain rate on the left wall
         dv_dy_left = (self.fluid.v[0, 2:-2] - self.fluid.v[0, 0:-4]) / (2 * self.dy)
-        strain_rate_left = np.max(np.abs(dv_dy_left))
+        self.strain_rate_left = np.max(np.abs(dv_dy_left))
 
         # Measure the thickness of the diffusive zone on the left wall using the N2 species between Y=0.1 and Y=0.9
-        Y_N2_left = self.ChemicalManager.chemistries['N2'].Y[:, 2:-2]
-        Y_N2_min = 0.1
-        Y_N2_max = 0.9
+        Y_N2 = self.ChemicalManager.chemistries['N2'].Y
+        Y_N2_left = Y_N2[:, 2:-2]
+        Y_N2_min = 0.1 * np.max(Y_N2_left[:, :])
+        Y_N2_max = 0.9 * np.max(Y_N2_left[:, :])
         indices_min = np.where(Y_N2_left[:, :] >= Y_N2_min)[0]
         indices_max = np.where(Y_N2_left[:, :] <= Y_N2_max)[0]
         if indices_min.size > 0 and indices_max.size > 0:
             y_min = indices_min[0] * self.dy
             y_max = indices_max[-1] * self.dy
-            diffusive_thickness = y_max - y_min
+            self.diffusive_thickness = y_max - y_min
         
         print("=" * 50)
         print("FLOW FIELD INFORMATION")
-        print("strain rate on left wall: {:.4f} 1/s".format(strain_rate_left))
-        if diffusive_thickness is not None:
-            print("diffusive zone thickness on left wall: {:.4e} m".format(diffusive_thickness))
+        print("strain rate on left wall: {:.4f} 1/s".format(self.strain_rate_left))
+        if self.diffusive_thickness is not None:
+            print("diffusive zone thickness on left wall: {:.4e} m".format(self.diffusive_thickness))
 
     # ==================== Numba-accelerated versions ====================
 
@@ -785,35 +754,14 @@ class System:
         # Update interior velocity components using advection-diffusion (numba version)
         u_star, v_star = self.fluid.adv_diff_interior_numba(
             self.inv_dx, self.inv_dy)
-    
-        # --- Left boundary (i=0) special handling ---
-        i = 0
-        for j in range(1, self.m-1):
-            v_loc = self.fluid.v[i, j]
-            u_star[i, j] = 0  # No-slip on left boundary
-            
-            # Upwind advection for v-component
-            if v_loc >= 0:
-                adv_v_y = v_loc * (v_loc - self.fluid.v[i, j-1]) / self.dy
-            else:
-                adv_v_y = v_loc * (self.fluid.v[i, j+1] - v_loc) / self.dy
-            
-            # Asymmetric diffusion (one-sided in x-direction)
-            diffusion_v = self.fluid.nu * (
-                (2*self.fluid.v[i+1, j] - 2*v_loc) / self.dx**2 +
-                (self.fluid.v[i, j+1] - 2*v_loc + self.fluid.v[i, j-1]) / self.dy**2
-            )
-            
-            v_star[i, j] = v_loc + self.dt * (-adv_v_y + diffusion_v)
-
-        self.fluid.apply_velocity_bcs(u_star, v_star, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+        self.fluid.apply_velocity_bcs(self.fluid.u, self.fluid.v, u_star, v_star, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
 
         # === STEP 2: SOLVE PRESSURE POISSON EQUATION (numba version) ===
         self.fluid.SOR_pressure_solver_numba(u_star, v_star)
         
         # === STEP 3: CORRECT VELOCITIES WITH PRESSURE GRADIENT (numba version) ===
         u_new, v_new = self.fluid.correction_velocity_numba(u_star, v_star)
-        self.fluid.apply_velocity_bcs(u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow)
+        self.fluid.apply_velocity_bcs(u_star, v_star, u_new, v_new, self.ind_inlet, self.ind_coflow, self.Uslot, self.Ucoflow, True)
 
         # === STEP 4: UPDATE SCALARS (TEMPERATURE, SPECIES) ===
         # Initialiser les taux de réaction (numba version)

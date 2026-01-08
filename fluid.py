@@ -52,7 +52,7 @@ class Fluid:
         self.inv_dy = 1/dy
 
     # Ajout : helper vectorisé pour advection-diffusion (utilisable aussi pour scalaires)
-    def adv_diff_interior(self, inv_dx, inv_dy, src_u=None, src_v=None):
+    def adv_diff_interior(self):
         u_new = np.copy(self.u)
         v_new = np.copy(self.v)
         
@@ -67,37 +67,37 @@ class Fluid:
         # ============================================================================
         # X-direction half-steps for u
         uphalf_x = 0.5 * (self.u[self.i_slice, self.j_slice] + self.u[3:-1, self.j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[3:-1, self.j_slice]**2 - self.u[self.i_slice, self.j_slice]**2)
+                   0.5 * self.dt * self.inv_dx * (self.u[3:-1, self.j_slice]**2 - self.u[self.i_slice, self.j_slice]**2)
         umhalf_x = 0.5 * (self.u[1:-3, self.j_slice] + self.u[self.i_slice, self.j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[self.i_slice, self.j_slice]**2 - self.u[1:-3, self.j_slice]**2)
+                   0.5 * self.dt * self.inv_dx * (self.u[self.i_slice, self.j_slice]**2 - self.u[1:-3, self.j_slice]**2)
         
         # Y-direction half-steps for v (needed for cross-terms)
         vphalf_y = 0.5 * (self.v[self.i_slice, self.j_slice] + self.v[self.i_slice, 3:-1]) - \
-                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, 3:-1]**2 - self.v[self.i_slice, self.j_slice]**2)
+                   0.5 * self.dt * self.inv_dy * (self.v[self.i_slice, 3:-1]**2 - self.v[self.i_slice, self.j_slice]**2)
         vmhalf_y = 0.5 * (self.v[self.i_slice, 1:-3] + self.v[self.i_slice, self.j_slice]) - \
-                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, self.j_slice]**2 - self.v[self.i_slice, 1:-3]**2)
+                   0.5 * self.dt * self.inv_dy * (self.v[self.i_slice, self.j_slice]**2 - self.v[self.i_slice, 1:-3]**2)
         
         # Cross-direction half-steps for u in y-direction
         uphalf_y = 0.5 * (self.u[self.i_slice, self.j_slice] + self.u[self.i_slice, 3:-1]) - \
-                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, 3:-1]*self.u[self.i_slice, 3:-1] - 
+                   0.5 * self.dt * self.inv_dy * (self.v[self.i_slice, 3:-1]*self.u[self.i_slice, 3:-1] - 
                                               self.v[self.i_slice, self.j_slice]*self.u[self.i_slice, self.j_slice])
         umhalf_y = 0.5 * (self.u[self.i_slice, 1:-3] + self.u[self.i_slice, self.j_slice]) - \
-                   0.25 * self.dt * inv_dy * (self.v[self.i_slice, self.j_slice]*self.u[self.i_slice, self.j_slice] - 
+                   0.5 * self.dt * self.inv_dy * (self.v[self.i_slice, self.j_slice]*self.u[self.i_slice, self.j_slice] - 
                                               self.v[self.i_slice, 1:-3]*self.u[self.i_slice, 1:-3])
         
         # ============================================================================
         # U-MOMENTUM: Advection terms (Lax-Wendroff scheme)
         # ============================================================================
-        adv_x_u = 0.5 * inv_dx * (uphalf_x**2 - umhalf_x**2)
-        adv_y_u = 0.5 * inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
+        adv_x_u = 0.5 * self.inv_dx * (uphalf_x**2 - umhalf_x**2)
+        adv_y_u = self.inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
         
         # ============================================================================
         # U-MOMENTUM: Diffusion terms (4th order accurate)
         # ============================================================================
         diff_x_u = (-self.u[4:, self.j_slice] + 16.0*self.u[3:-1, self.j_slice] - 30.0*u_loc + 
-                    16.0*self.u[1:-3, self.j_slice] - self.u[:-4, self.j_slice]) * inv_dx**2 / 12.0
+                    16.0*self.u[1:-3, self.j_slice] - self.u[:-4, self.j_slice]) * self.inv_dx**2 / 12.0
         diff_y_u = (-self.u[self.i_slice, 4:] + 16.0*self.u[self.i_slice, 3:-1] - 30.0*u_loc + 
-                    16.0*self.u[self.i_slice, 1:-3] - self.u[self.i_slice, :-4]) * inv_dy**2 / 12.0
+                    16.0*self.u[self.i_slice, 1:-3] - self.u[self.i_slice, :-4]) * self.inv_dy**2 / 12.0
         diff_u = self.nu * (diff_x_u + diff_y_u)
         
         # ============================================================================
@@ -110,25 +110,25 @@ class Fluid:
         # ============================================================================
         # Cross-direction half-steps for v in x-direction
         vphalh_x = 0.5 * (self.v[self.i_slice, self.j_slice] + self.v[3:-1, self.j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[3:-1, self.j_slice]*self.v[3:-1, self.j_slice] - 
+                   0.5 * self.dt * self.inv_dx * (self.u[3:-1, self.j_slice]*self.v[3:-1, self.j_slice] - 
                                               self.u[self.i_slice, self.j_slice]*self.v[self.i_slice, self.j_slice])
         vmhalh_x = 0.5 * (self.v[1:-3, self.j_slice] + self.v[self.i_slice, self.j_slice]) - \
-                   0.25 * self.dt * inv_dx * (self.u[self.i_slice, self.j_slice]*self.v[self.i_slice, self.j_slice] - 
+                   0.5 * self.dt * self.inv_dx * (self.u[self.i_slice, self.j_slice]*self.v[self.i_slice, self.j_slice] - 
                                               self.u[1:-3, self.j_slice]*self.v[1:-3, self.j_slice])
         
         # ============================================================================
         # V-MOMENTUM: Advection terms (Lax-Wendroff scheme)
         # ============================================================================
-        adv_x_v = 0.5 * inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
-        adv_y_v = 0.5 * inv_dy * (vphalf_y**2 - vmhalf_y**2)
+        adv_x_v = self.inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
+        adv_y_v = 0.5 * self.inv_dy * (vphalf_y**2 - vmhalf_y**2)
         
         # ============================================================================
         # V-MOMENTUM: Diffusion terms (4th order accurate)
         # ============================================================================
         diff_x_v = (-self.v[4:, self.j_slice] + 16.0*self.v[3:-1, self.j_slice] - 30.0*v_loc + 
-                    16.0*self.v[1:-3, self.j_slice] - self.v[:-4, self.j_slice]) * inv_dx**2 / 12.0
+                    16.0*self.v[1:-3, self.j_slice] - self.v[:-4, self.j_slice]) * self.inv_dx**2 / 12.0
         diff_y_v = (-self.v[self.i_slice, 4:] + 16.0*self.v[self.i_slice, 3:-1] - 30.0*v_loc + 
-                    16.0*self.v[self.i_slice, 1:-3] - self.v[self.i_slice, :-4]) * inv_dy**2 / 12.0
+                    16.0*self.v[self.i_slice, 1:-3] - self.v[self.i_slice, :-4]) * self.inv_dy**2 / 12.0
         diff_v = self.nu * (diff_x_v + diff_y_v)
         
         # ============================================================================
@@ -139,7 +139,7 @@ class Fluid:
         return u_new, v_new
 
     # Optionnel : méthode pour appliquer BCs de vitesse si on veut externaliser
-    def apply_velocity_bcs(self, u_upd, v_upd, ind_inlet, ind_coflow, Uslot, Ucoflow):   
+    def apply_velocity_bcs(self, u_pre, v_pre, u_upd, v_upd, ind_inlet, ind_coflow, Uslot, Ucoflow, bool_pressure=False):   
         """
         Apply velocity boundary conditions:
         - Inlet (left boundary): specified velocities for CH4 and O2+N2 inlets
@@ -203,10 +203,52 @@ class Fluid:
         # ============================================================================
         # OUTLET BOUNDARY: Right boundary (extrapolation/zero-gradient)
         # ============================================================================
-        u_upd[self.n-1, 2:self.m-2] = u_upd[self.n-3, 2:self.m-2]
-        v_upd[self.n-1, 2:self.m-2] = v_upd[self.n-3, 2:self.m-2]
-        u_upd[self.n-2, 2:self.m-2] = u_upd[self.n-3, 2:self.m-2]
-        v_upd[self.n-2, 2:self.m-2] = v_upd[self.n-3, 2:self.m-2]
+        u_upd[self.n-1, :] = u_upd[self.n-3, :]
+        v_upd[self.n-1, :] = v_upd[self.n-3, :]
+        u_upd[self.n-2, :] = u_upd[self.n-3, :]
+        v_upd[self.n-2, :] = v_upd[self.n-3, :]
+
+        # ============================================================================
+        # CORNER FIX: Handle corners to avoid artifacts
+        # ============================================================================
+        # Coin bas-droite
+        for i in range(self.n-2, self.n):
+            for j in range(2):
+                u_upd[i, j] = u_upd[self.n-3, j]
+                v_upd[i, j] = v_upd[self.n-3, j]
+        
+        # Coin haut-droite
+        for i in range(self.n-2, self.n):
+            for j in range(self.m-2, self.m):
+                u_upd[i, j] = u_upd[self.n-3, j]
+                v_upd[i, j] = v_upd[self.n-3, j]
+
+        # --- Left boundary (i=0) special handling ---
+        for i in range(2):
+            for j in range(1, self.m-1):
+                v_loc = v_pre[i, j]
+                u_upd[i, j] = 0  # No-slip on left boundary
+                
+                # Upwind advection for v-component
+                if v_loc >= 0:
+                    adv_v_y = v_loc * (v_loc - v_pre[i, j-1]) * self.inv_dy
+                else:
+                    adv_v_y = v_loc * (v_pre[i, j+1] - v_loc) * self.inv_dy
+                
+                # Asymmetric diffusion (one-sided in x-direction)
+                diffusion_v = self.nu * (
+                    (2*v_pre[i+1, j] - 2*v_loc) * self.inv_dx**2 +
+                    (v_pre[i, j+1] - 2*v_loc + v_pre[i, j-1]) * self.inv_dy**2
+                )
+                
+                if bool_pressure == True:
+                    # Pressure gradient at boundary
+                    dp_dy_local = (self.P[2, j] - self.P[0, j]) * self.inv_dy * 0.5
+                else:
+                    dp_dy_local = 0
+                    
+                v_upd[i, j] = v_loc + self.dt * (-adv_v_y + diffusion_v -  dp_dy_local / self.rho)
+
         
     def SOR_pressure_solver(self, u, v):
         """
@@ -227,6 +269,7 @@ class Fluid:
         # ============================================================================
         f = np.zeros_like(self.P)
         f[self.i_slice, self.j_slice] = (self.rho / self.dt) * (du_dx + dv_dy)
+
 
         # ============================================================================
         # SOR SOLVER INITIALIZATION: Setup parameters and arrays
@@ -291,7 +334,7 @@ class Fluid:
 
         self.P = P_new
     
-    def correction_velocity(self, u_star, v_star, dt, inv_dx, inv_dy, n, m):
+    def correction_velocity(self, u_star, v_star):
         """
         Correct intermediate velocity: u^(n+1) = u* - (Δt/ρ)∇P
         Cette correction REMPLACE u* et v*, pas s'ajoute à un calcul précédent
@@ -310,35 +353,13 @@ class Fluid:
         v_new = np.copy(v_star)
         
         u_new[self.i_slice, self.j_slice] = u_star[self.i_slice, self.j_slice] - (self.dt / self.rho) * dp_dx
-        v_new[self.i_slice, self.j_slice] = v_star[self.i_slice, self.j_slice] - (self.dt / self.rho) * dp_dy
-
-        # ======================================================================
-        # LEFT BOUNDARY: Special handling for inlet boundary
-        # ======================================================================
-        for i in range(2):
-            for j in range(2, m-2):
-                v_loc = v_star[i, j]
-                u_new[i, j] = 0.0
-                
-                # Upwind advection for v
-                if v_loc >= 0:
-                    adv_v_y = v_loc * (v_loc - v_star[i, j-1]) * inv_dy
-                else:
-                    adv_v_y = v_loc * (v_star[i, j+1] - v_loc) * inv_dy
-                
-                # Diffusion for v at boundary
-                diffusion_v = self.nu * (
-                    (2*v_star[i+1, j] - 2*v_loc) * inv_dx**2 +
-                    (v_star[i, j+1] - 2*v_loc + v_star[i, j-1]) * inv_dy**2
-                )
-                
-                # Pressure gradient at boundary
-                dp_dy_local = (self.P[2, j] - self.P[0, j]) * inv_dy * 0.5
-                v_new[i, j] = v_loc + dt * (-adv_v_y + diffusion_v - (dt / self.rho) * dp_dy_local)
+        v_new[self.i_slice, self.j_slice] = v_star[self.i_slice, self.j_slice] - (self.dt / self.rho) * dp_dy                
 
         return u_new, v_new
-
-    # ==================== Numba-accelerated versions ====================
+    
+    # =======================================================================================================
+    # ======================================= Numba-accelerated versions =====================================
+    # =======================================================================================================
 
     @staticmethod
     @jit(nopython=True, parallel=True)
@@ -358,24 +379,24 @@ class Fluid:
                 # ==================================================================
                 # LAX-WENDROFF HALF-STEPS: Compute intermediate values
                 # ==================================================================
-                uphalf_x = 0.5 * (u[i, j] + u[i+1, j]) - 0.25 * dt * inv_dx * (u[i+1, j]**2 - u[i, j]**2)
-                umhalf_x = 0.5 * (u[i-1, j] + u[i, j]) - 0.25 * dt * inv_dx * (u[i, j]**2 - u[i-1, j]**2)
-                vphalf_y = 0.5 * (v[i, j] + v[i, j+1]) - 0.25 * dt * inv_dy * (v[i, j+1]**2 - v[i, j]**2)
-                vmhalf_y = 0.5 * (v[i, j-1] + v[i, j]) - 0.25 * dt * inv_dy * (v[i, j]**2 - v[i, j-1]**2)
+                uphalf_x = 0.5 * (u[i, j] + u[i+1, j]) - 0.5 * dt * inv_dx * (u[i+1, j]**2 - u[i, j]**2)
+                umhalf_x = 0.5 * (u[i-1, j] + u[i, j]) - 0.5 * dt * inv_dx * (u[i, j]**2 - u[i-1, j]**2)
+                vphalf_y = 0.5 * (v[i, j] + v[i, j+1]) - 0.5 * dt * inv_dy * (v[i, j+1]**2 - v[i, j]**2)
+                vmhalf_y = 0.5 * (v[i, j-1] + v[i, j]) - 0.5 * dt * inv_dy * (v[i, j]**2 - v[i, j-1]**2)
                 
-                vphalh_x = 0.5 * (v[i, j] + v[i+1, j]) - 0.25 * dt * inv_dx * (u[i+1, j]*v[i+1, j] - u[i, j]*v[i, j])
-                vmhalh_x = 0.5 * (v[i-1, j] + v[i, j]) - 0.25 * dt * inv_dx * (u[i, j]*v[i, j] - u[i-1, j]*v[i-1, j])
-                uphalf_y = 0.5 * (u[i, j] + u[i, j+1]) - 0.25 * dt * inv_dy * (v[i, j+1]*u[i, j+1] - v[i, j]*u[i, j])
-                umhalf_y = 0.5 * (u[i, j-1] + u[i, j]) - 0.25 * dt * inv_dy * (v[i, j]*u[i, j] - v[i, j-1]*u[i, j-1])
+                vphalh_x = 0.5 * (v[i, j] + v[i+1, j]) - 0.5 * dt * inv_dx * (u[i+1, j]*v[i+1, j] - u[i, j]*v[i, j])
+                vmhalh_x = 0.5 * (v[i-1, j] + v[i, j]) - 0.5 * dt * inv_dx * (u[i, j]*v[i, j] - u[i-1, j]*v[i-1, j])
+                uphalf_y = 0.5 * (u[i, j] + u[i, j+1]) - 0.5 * dt * inv_dy * (v[i, j+1]*u[i, j+1] - v[i, j]*u[i, j])
+                umhalf_y = 0.5 * (u[i, j-1] + u[i, j]) - 0.5 * dt * inv_dy * (v[i, j]*u[i, j] - v[i, j-1]*u[i, j-1])
 
                 # ==================================================================
                 # ADVECTION TERMS: Compute using Lax-Wendroff scheme
                 # ==================================================================
-                adv_x_u = 0.5 * inv_dx * (uphalf_x**2 - umhalf_x**2)
-                adv_y_u = 0.5 * inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
+                adv_x_u = inv_dx * (uphalf_x**2 - umhalf_x**2)
+                adv_y_u = inv_dy * (vphalf_y * uphalf_y - vmhalf_y * umhalf_y)
 
-                adv_x_v = 0.5 * inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
-                adv_y_v = 0.5 * inv_dy * (vphalf_y**2 - vmhalf_y**2)
+                adv_x_v = inv_dx * (uphalf_x * vphalh_x - umhalf_x * vmhalh_x)
+                adv_y_v = inv_dy * (vphalf_y**2 - vmhalf_y**2)
 
                 # ==================================================================
                 # DIFFUSION U: Compute 4th-order accurate diffusion for u
@@ -426,6 +447,8 @@ class Fluid:
             for j in range(2, m-2):
                 du_dx = 0.5 * inv_dx * (u[i+1, j] - u[i-1, j])
                 dv_dy = 0.5 * inv_dy * (v[i, j+1] - v[i, j-1])
+                du_dy = 0.5 * inv_dy * (u[i, j+1] - u[i, j-1])
+                dv_dx = 0.5 * inv_dx * (v[i+1, j] - v[i-1, j])
                 f[i, j] = (const.rho / dt) * (du_dx + dv_dy)
         
         denom = 2.0 * (inv_dx**2 + inv_dy**2)
@@ -470,8 +493,8 @@ class Fluid:
         # ======================================================================
         P_new[0, :] = P_new[2, :]
         P_new[1, :] = P_new[2, :]
-        P_new[-1, :] = 0.0
-        P_new[-2, :] = 0.0
+        P_new[-1, :] = P_new[-3, :]
+        P_new[-2, :] = P_new[-3, :]
         P_new[:, 0] = P_new[:, 2]
         P_new[:, 1] = P_new[:, 2]
         P_new[:, -1] = P_new[:, -3]
@@ -481,7 +504,7 @@ class Fluid:
     
     def SOR_pressure_solver_numba(self, u, v):
         self.P = self._sor_kernel(self.P, u, v, self.inv_dx, self.inv_dy,
-                                  self.dt, 1.5, 1e-6, 2000, 
+                                  self.dt, 1.8, 1e-6, 2000, 
                                 self.n, self.m)
     
     @staticmethod
@@ -502,29 +525,29 @@ class Fluid:
                 u_new[i, j] = u_star[i, j] - (dt / rho) * dp_dx
                 v_new[i, j] = v_star[i, j] - (dt / rho) * dp_dy
         
-        # ======================================================================
-        # LEFT BOUNDARY: Special handling for inlet boundary
-        # ======================================================================
-        for i in range(2):
-            for j in range(2, m-2):
-                v_loc = v_star[i, j]
-                u_new[i, j] = 0.0
+        # # ======================================================================
+        # # LEFT BOUNDARY: Special handling for inlet boundary
+        # # ======================================================================
+        # for i in range(2):
+        #     for j in range(2, m-2):
+        #         v_loc = v_star[i, j]
+        #         u_new[i, j] = 0.0
                 
-                # Upwind advection for v
-                if v_loc >= 0:
-                    adv_v_y = v_loc * (v_loc - v_star[i, j-1]) * inv_dy
-                else:
-                    adv_v_y = v_loc * (v_star[i, j+1] - v_loc) * inv_dy
+        #         # Upwind advection for v
+        #         if v_loc >= 0:
+        #             adv_v_y = v_loc * (v_loc - v_star[i, j-1]) * inv_dy
+        #         else:
+        #             adv_v_y = v_loc * (v_star[i, j+1] - v_loc) * inv_dy
                 
-                # Diffusion for v at boundary
-                diffusion_v = nu * (
-                    (2*v_star[i+1, j] - 2*v_loc) * inv_dx**2 +
-                    (v_star[i, j+1] - 2*v_loc + v_star[i, j-1]) * inv_dy**2
-                )
+        #         # Diffusion for v at boundary
+        #         diffusion_v = nu * (
+        #             (2*v_star[i+1, j] - 2*v_loc) * inv_dx**2 +
+        #             (v_star[i, j+1] - 2*v_loc + v_star[i, j-1]) * inv_dy**2
+        #         )
                 
-                # Pressure gradient at boundary
-                dp_dy_local = (P[2, j] - P[0, j]) * inv_dy * 0.5
-                v_new[i, j] = v_loc + dt * (-adv_v_y + diffusion_v - (dt / rho) * dp_dy_local)
+        #         # Pressure gradient at boundary
+        #         dp_dy_local = (P[2, j] - P[0, j]) * inv_dy * 0.5
+        #         v_new[i, j] = v_loc + dt * (-adv_v_y + diffusion_v - (dt / rho) * dp_dy_local)
         
         return u_new, v_new
     

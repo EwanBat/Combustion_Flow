@@ -78,7 +78,8 @@ class ChemistryManager:
         self.i_slice = slice(2, -2)
         self.j_slice = slice(2, -2)
 
-    def initiate_steps(self, dx, dy):
+    def initiate_steps(self, dt, dx, dy):
+        self.dt = dt
         self.inv_dx = 1/dx
         self.inv_dy = 1/dy
 
@@ -248,63 +249,74 @@ class ChemistryManager:
         # ============================================================================
         # OUTLET BOUNDARY: Right boundary (extrapolation)
         # ============================================================================
-        Y_CH4_new[self.n-1, 2:self.m-2] = Y_CH4_new[self.n-3, 2:self.m-2]
-        Y_O2_new[self.n-1, 2:self.m-2] = Y_O2_new[self.n-3, 2:self.m-2]
-        Y_CO2_new[self.n-1, 2:self.m-2] = Y_CO2_new[self.n-3, 2:self.m-2]
-        Y_H2O_new[self.n-1, 2:self.m-2] = Y_H2O_new[self.n-3, 2:self.m-2]
-        Y_N2_new[self.n-1, 2:self.m-2] = Y_N2_new[self.n-3, 2:self.m-2]
-        Y_CH4_new[self.n-2, 2:self.m-2] = Y_CH4_new[self.n-3, 2:self.m-2]
-        Y_O2_new[self.n-2, 2:self.m-2] = Y_O2_new[self.n-3, 2:self.m-2]
-        Y_CO2_new[self.n-2, 2:self.m-2] = Y_CO2_new[self.n-3, 2:self.m-2]
-        Y_H2O_new[self.n-2, 2:self.m-2] = Y_H2O_new[self.n-3, 2:self.m-2]
-        Y_N2_new[self.n-2, 2:self.m-2] = Y_N2_new[self.n-3, 2:self.m-2]
+        Y_CH4_new[self.n-1, :] = Y_CH4_new[self.n-3, :]
+        Y_O2_new[self.n-1, :] = Y_O2_new[self.n-3, :]
+        Y_CO2_new[self.n-1, :] = Y_CO2_new[self.n-3, :]
+        Y_H2O_new[self.n-1, :] = Y_H2O_new[self.n-3, :]
+        Y_N2_new[self.n-1, :] = Y_N2_new[self.n-3, :]
+        Y_CH4_new[self.n-2, :] = Y_CH4_new[self.n-3, :]
+        Y_O2_new[self.n-2, :] = Y_O2_new[self.n-3, :]
+        Y_CO2_new[self.n-2, :] = Y_CO2_new[self.n-3, :]
+        Y_H2O_new[self.n-2, :] = Y_H2O_new[self.n-3, :]
+        Y_N2_new[self.n-2, :] = Y_N2_new[self.n-3, :]
 
     # Compute RHS for one species (vectorisé)
     def compute_species_rhs(self, phi, u, v, diffusion_coef, source):
         """
         Compute the RHS of the advection-diffusion-reaction equation for one species.
-        Args:
-            phi (np.ndarray): mass fraction field of the species.
-            u, v (np.ndarray): velocity fields in x and y directions.
-            diffusion_coef (float): molecular diffusivity of the species.
-            source (np.ndarray or None): source term field (kg/kg/s) or None.
         """
         # ============================================================================
         # GRID SETUP: Define interior domain for 4th-order stencil
         # ============================================================================
         phi_loc = phi[self.i_slice, self.j_slice]
+        u_loc = u[self.i_slice, self.j_slice]
+        v_loc = v[self.i_slice, self.j_slice]
+
+        # ============================================================================
+        # LAX-WENDROFF HALF-STEPS: Compute intermediate values for advection
+        # ============================================================================
+        # X-direction half-steps
+        phi_phalf_x = 0.5 * (phi[self.i_slice, self.j_slice] + phi[3:-1, self.j_slice]) - \
+                      0.5 * self.dt * self.inv_dx * u_loc * (phi[3:-1, self.j_slice] - phi[self.i_slice, self.j_slice])
+        phi_mhalf_x = 0.5 * (phi[1:-3, self.j_slice] + phi[self.i_slice, self.j_slice]) - \
+                      0.5 * self.dt * self.inv_dx * u_loc * (phi[self.i_slice, self.j_slice] - phi[1:-3, self.j_slice])
         
+        # Y-direction half-steps
+        phi_phalf_y = 0.5 * (phi[self.i_slice, self.j_slice] + phi[self.i_slice, 3:-1]) - \
+                      0.5 * self.dt * self.inv_dy * v_loc * (phi[self.i_slice, 3:-1] - phi[self.i_slice, self.j_slice])
+        phi_mhalf_y = 0.5 * (phi[self.i_slice, 1:-3] + phi[self.i_slice, self.j_slice]) - \
+                      0.5 * self.dt * self.inv_dy * v_loc * (phi[self.i_slice, self.j_slice] - phi[self.i_slice, 1:-3])
+
         # ============================================================================
-        # FIELD EXTRACTION: Get shifted values for spatial derivatives
+        # ADVECTION: Lax-Wendroff scheme (second-order accurate)
         # ============================================================================
-        # Shifts in x-direction
+        uphalf_x = 0.5 * (u[self.i_slice, self.j_slice] + u[3:-1, self.j_slice]) - \
+                   0.5 * self.dt * self.inv_dx * (u[3:-1, self.j_slice]**2 - u[self.i_slice, self.j_slice]**2)
+        umhalf_x = 0.5 * (u[1:-3, self.j_slice] + u[self.i_slice, self.j_slice]) - \
+                   0.5 * self.dt * self.inv_dx * (u[self.i_slice, self.j_slice]**2 - u[1:-3, self.j_slice]**2)
+        
+        vphalf_y = 0.5 * (v[self.i_slice, self.j_slice] + v[self.i_slice, 3:-1]) - \
+                   0.5 * self.dt * self.inv_dy * (v[self.i_slice, 3:-1]**2 - v[self.i_slice, self.j_slice]**2)
+        vmhalf_y = 0.5 * (v[self.i_slice, 1:-3] + v[self.i_slice, self.j_slice]) - \
+                   0.5 * self.dt * self.inv_dy * (v[self.i_slice, self.j_slice]**2 - v[self.i_slice, 1:-3]**2)
+        
+        adv_x = (uphalf_x * phi_phalf_x - umhalf_x * phi_mhalf_x) * self.inv_dx
+        adv_y = (vphalf_y * phi_phalf_y - vmhalf_y * phi_mhalf_y) * self.inv_dy
+
+        # ============================================================================
+        # DIFFUSION: 4th-order central differences (unchanged)
+        # ============================================================================
         phi_m2_x = phi[:-4, self.j_slice]
         phi_m1_x = phi[1:-3, self.j_slice]
         phi_p1_x = phi[3:-1, self.j_slice]
         phi_p2_x = phi[4:, self.j_slice]
-        # Shifts in y-direction
         phi_m2_y = phi[self.i_slice, :-4]
         phi_m1_y = phi[self.i_slice, 1:-3]
         phi_p1_y = phi[self.i_slice, 3:-1]
         phi_p2_y = phi[self.i_slice, 4:]
-
-        # ============================================================================
-        # ADVECTION: Compute upwind advective fluxes
-        # ============================================================================
-        u_loc = u[self.i_slice, self.j_slice]; v_loc = v[self.i_slice, self.j_slice]
-        u_pos = np.maximum(u_loc, 0); u_neg = np.minimum(u_loc, 0)
-        adv_x = (u_pos * (phi_loc - phi_m1_x) * self.inv_dx +
-                 u_neg * (phi_p1_x - phi_loc) * self.inv_dx)
-        v_pos = np.maximum(v_loc, 0); v_neg = np.minimum(v_loc, 0)
-        adv_y = (v_pos * (phi_loc - phi_m1_y) * self.inv_dy +
-                 v_neg * (phi_p1_y - phi_loc) * self.inv_dy)
-
-        # ============================================================================
-        # DIFFUSION: Compute 4th-order central differences (5-point stencil)
-        # ============================================================================
+        
         diff_x = (-phi_p2_x + 16.0*phi_p1_x - 30.0*phi_loc + 16.0*phi_m1_x - phi_m2_x) * self.inv_dx**2 / 12.0
         diff_y = (-phi_p2_y + 16.0*phi_p1_y - 30.0*phi_loc + 16.0*phi_m1_y - phi_m2_y) * self.inv_dy**2 / 12.0
-
         diff = diffusion_coef * (diff_x + diff_y)
         
         # ============================================================================
@@ -398,7 +410,7 @@ class ChemistryManager:
         rhs = np.zeros((self.n-4, self.m-4))
         _compute_species_rhs_numba(
             phi, u, v, diffusion_coef, source if source is not None else np.zeros_like(phi),
-            self.inv_dx, self.inv_dy, rhs
+            self.inv_dx, self.inv_dy, self.dt, rhs
         )
         return rhs
 
@@ -437,7 +449,7 @@ class ChemistryManager:
             'O2': k_O2,
             'CO2': k_CO2,
             'H2O': k_H2O,
-            'N2': np.zeros_like(k_CH4)  # N2 est inerte
+            'N2': np.zeros_like(k_CH4)  # N2 is inerte
         }
         
     def heat_release_numba(self):
@@ -496,7 +508,7 @@ class ChemistryManager:
         # enforce small-value clipping and BCs
         self.chemistry_boundaries_numba(Y['CH4'], Y['O2'], Y['CO2'], Y['H2O'], Y['N2'], ind_inlet, ind_coflow)
         for name in Y:
-            Y[name][Y[name] < 1e-15] = 0.0
+            Y[name][Y[name] < 1e-7] = 0.0
             self.chemistries[name].Y = Y[name]
 
 
@@ -686,7 +698,7 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
     # ===========================================================================
     # OUTLET BOUNDARY: Right boundary (extrapolation)
     # ===========================================================================
-    for j in prange(2, m-2):
+    for j in prange(m):
         Y_CH4[n-1, j] = Y_CH4[n-3, j]
         Y_O2[n-1, j] = Y_O2[n-3, j]
         Y_CO2[n-1, j] = Y_CO2[n-3, j]
@@ -700,8 +712,8 @@ def _apply_chemistry_boundaries_numba(Y_CH4, Y_O2, Y_CO2, Y_H2O, Y_N2, ind_inlet
 
 
 @njit(parallel=True)
-def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy, rhs):
-    """Numba-compiled function to compute species RHS in parallel."""
+def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy, dt, rhs):
+    """Numba-compiled function to compute species RHS in parallel using Lax-Wendroff."""
     # ===========================================================================
     # GRID SETUP: Extract dimensions and precompute inverses
     # ===========================================================================
@@ -736,20 +748,37 @@ def _compute_species_rhs_numba(phi, u, v, diffusion_coef, source, inv_dx, inv_dy
             
             u_loc = u[ii, jj]
             v_loc = v[ii, jj]
+            v_m1_y = v[ii, jj-1]
+            v_p1_y = v[ii, jj+1]
+            u_m1_x = u[ii-1, jj]
+            u_p1_x = u[ii+1, jj]
             
             # ===================================================================
-            # ADVECTION: Upwind scheme for convective terms
+            # LAX-WENDROFF HALF-STEPS: Compute intermediate values
             # ===================================================================
-            if u_loc > 0:
-                adv_x = u_loc * (phi_loc - phi_m1_x) * inv_dx
-            else:
-                adv_x = u_loc * (phi_p1_x - phi_loc) * inv_dx
+            # X-direction half-steps
+            phi_phalf_x = 0.5 * (phi_loc + phi_p1_x) - \
+                          0.5 * dt * inv_dx * (u_p1_x * phi_p1_x - u_loc * phi_loc)
+            phi_mhalf_x = 0.5 * (phi_m1_x + phi_loc) - \
+                          0.5 * dt * inv_dx * (u_loc * phi_loc - u_m1_x * phi_m1_x)
             
-            if v_loc > 0:
-                adv_y = v_loc * (phi_loc - phi_m1_y) * inv_dy
-            else:
-                adv_y = v_loc * (phi_p1_y - phi_loc) * inv_dy
+            # Y-direction half-steps
+            phi_phalf_y = 0.5 * (phi_loc + phi_p1_y) - \
+                          0.5 * dt * inv_dy * (v_p1_y * phi_p1_y - v_loc * phi_loc)
+            phi_mhalf_y = 0.5 * (phi_m1_y + phi_loc) - \
+                          0.5 * dt * inv_dy * (v_loc * phi_loc - v_m1_y * phi_m1_y)
             
+            # ===================================================================
+            # ADVECTION: Lax-Wendroff scheme (second-order accurate)
+            # ===================================================================
+            uphalf_x = 0.5 * (u_loc + u_p1_x) - 0.5 * dt * inv_dx * (u_p1_x**2 - u_loc**2)
+            umhalf_x = 0.5 * (u_m1_x + u_loc) - 0.5 * dt * inv_dx * (u_loc**2 - u_m1_x**2)
+            vphalf_y = 0.5 * (v_loc + v_p1_y) - 0.5 * dt * inv_dy * (v_p1_y**2 - v_loc**2)
+            vmhalf_y = 0.5 * (v_m1_y + v_loc) - 0.5 * dt * inv_dy * (v_loc**2 - v_m1_y**2)
+            
+            adv_x = (uphalf_x * phi_phalf_x - umhalf_x * phi_mhalf_x) * inv_dx
+            adv_y = (vphalf_y * phi_phalf_y - vmhalf_y * phi_mhalf_y) * inv_dy
+
             # ===================================================================
             # DIFFUSION: 4th-order central differences
             # ===================================================================
