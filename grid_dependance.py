@@ -2,6 +2,7 @@ from chemistry import Chemistry, ChemistryManager
 from fluid import Fluid
 from system import System
 import constant as const
+import plotting
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,11 +22,11 @@ def main():
 
     # Define chemistry properties for CH4 and O2
     chemistries = {
-        'CH4': Chemistry(density=density, molar_mass=const.molar_mass['CH4'], diffusivity=viscosity),
-        'O2': Chemistry(density=density, molar_mass=const.molar_mass['O2'], diffusivity=viscosity),
-        'CO2': Chemistry(density=density, molar_mass=const.molar_mass['CO2'], diffusivity=viscosity),
-        'H2O': Chemistry(density=density, molar_mass=const.molar_mass['H2O'], diffusivity=viscosity),
-        'N2': Chemistry(density=density, molar_mass=const.molar_mass['N2'], diffusivity=viscosity)
+        'CH4': Chemistry(density=density, molar_mass=const.molar_mass['CH4']),
+        'O2': Chemistry(density=density, molar_mass=const.molar_mass['O2']),
+        'CO2': Chemistry(density=density, molar_mass=const.molar_mass['CO2']),
+        'H2O': Chemistry(density=density, molar_mass=const.molar_mass['H2O']),
+        'N2': Chemistry(density=density, molar_mass=const.molar_mass['N2'])
     }
     parallel = True
 
@@ -36,7 +37,7 @@ def main():
         u_initial = np.zeros((n, m))  # m/s
         v_initial = np.zeros((n, m))  # m/s
         P_initial = np.zeros((n, m))  # Pa
-        fluid = Fluid(n=n, m=m, diffusivity=viscosity, rho=density)
+        fluid = Fluid(n=n, m=m)
         fluid.velocity_initialization(u_initial, v_initial, P_initial)
 
         # Initialize mass fraction fields (example: CH4 in left half, O2 in right half)
@@ -58,10 +59,10 @@ def main():
         system = System(dt_data=dt_data, total_time=total_time, n=n, m=m, fluid=fluid, ChemicalManager=chemistry_manager)
         system.print_caracteristics()
         system.run(parallel=parallel)
-        system.flow_field_info()
+        strain_rate_left, diffusive_thickness = plotting.flow_field_info(self=system)
 
-        L_strainrate.append(system.strain_rate_left)
-        L_diffthick.append(system.diffusive_thickness)
+        L_strainrate.append(strain_rate_left)
+        L_diffthick.append(diffusive_thickness)
         L_maxtemp.append(np.max(system.T))
     
     # Plotting results

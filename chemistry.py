@@ -17,7 +17,7 @@ class Chemistry:
         diffusivity (float): species molecular diffusivity (m^2/s).
         Y (np.ndarray): mass fraction field (initialized via Y_initialization).
     """
-    def __init__(self, density, molar_mass, diffusivity):
+    def __init__(self, density, molar_mass):
         """
         Initialize a Chemistry object.
 
@@ -32,7 +32,7 @@ class Chemistry:
         """
         self.density = density
         self.molar_mass = molar_mass
-        self.diffusivity = diffusivity
+        self.diffusivity = const.D
 
     def Y_initialization(self, Y_initial):
         """Initialize the mass fraction field."""

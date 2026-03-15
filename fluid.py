@@ -21,7 +21,7 @@ class Fluid:
         dt, inv_dx, inv_dy (float): time step and inverse grid spacings (set later).
     """
     
-    def __init__(self, n, m, diffusivity, rho):
+    def __init__(self, n, m):
         """Initialize basic solver parameters.
 
         Args:
@@ -35,8 +35,8 @@ class Fluid:
         """
         self.n = n
         self.m = m
-        self.nu = diffusivity
-        self.rho = rho
+        self.nu = const.nu
+        self.rho = const.rho
         self.i_slice = slice(2, -2)
         self.j_slice = slice(2, -2)
 
@@ -50,6 +50,12 @@ class Fluid:
         self.dt = dt
         self.inv_dx = 1/dx
         self.inv_dy = 1/dy
+
+    def BC_initialization(self, ind_inlet, ind_coflow, Uslot, Ucoflow):
+        self.ind_inlet = ind_inlet
+        self.ind_coflow = ind_coflow
+        self.Uslot = Uslot
+        self.Ucoflow = Ucoflow
 
     # Ajout : helper vectorisé pour advection-diffusion (utilisable aussi pour scalaires)
     def adv_diff_interior(self):
@@ -139,7 +145,7 @@ class Fluid:
         return u_new, v_new
 
     # Optionnel : méthode pour appliquer BCs de vitesse si on veut externaliser
-    def apply_velocity_bcs(self, u_pre, v_pre, u_upd, v_upd, ind_inlet, ind_coflow, Uslot, Ucoflow, bool_pressure=False):   
+    def apply_velocity_bcs(self, u_pre, v_pre, u_upd, v_upd, bool_pressure=False):   
         """
         Apply velocity boundary conditions:
         - Inlet (left boundary): specified velocities for CH4 and O2+N2 inlets
@@ -155,50 +161,50 @@ class Fluid:
         # ============================================================================
         # INLET BOUNDARY: CH4 inlet (slot region, bottom wall)
         # ============================================================================
-        u_upd[:ind_inlet, 0] = 0
-        v_upd[:ind_inlet, 0] = Uslot
-        u_upd[:ind_inlet, 1] = 0
-        v_upd[:ind_inlet, 1] = Uslot
+        u_upd[:self.ind_inlet, 0] = 0
+        v_upd[:self.ind_inlet, 0] = self.Uslot
+        u_upd[:self.ind_inlet, 1] = 0
+        v_upd[:self.ind_inlet, 1] = self.Uslot
         
         # ============================================================================
         # INLET BOUNDARY: O2+N2 inlet (slot region, top wall)
         # ============================================================================
-        u_upd[:ind_inlet, self.m-1] = 0
-        v_upd[:ind_inlet, self.m-1] = -Uslot
-        u_upd[:ind_inlet, self.m-2] = 0
-        v_upd[:ind_inlet, self.m-2] = -Uslot
+        u_upd[:self.ind_inlet, self.m-1] = 0
+        v_upd[:self.ind_inlet, self.m-1] = -self.Uslot
+        u_upd[:self.ind_inlet, self.m-2] = 0
+        v_upd[:self.ind_inlet, self.m-2] = -self.Uslot
         
         # ============================================================================
         # COFLOW BOUNDARY: N2 coflow inlet (bottom wall)
         # ============================================================================
-        u_upd[ind_inlet:ind_coflow, 0] = 0
-        v_upd[ind_inlet:ind_coflow, 0] = Ucoflow
-        u_upd[ind_inlet:ind_coflow, 1] = 0
-        v_upd[ind_inlet:ind_coflow, 1] = Ucoflow
+        u_upd[self.ind_inlet:self.ind_coflow, 0] = 0
+        v_upd[self.ind_inlet:self.ind_coflow, 0] = self.Ucoflow
+        u_upd[self.ind_inlet:self.ind_coflow, 1] = 0
+        v_upd[self.ind_inlet:self.ind_coflow, 1] = self.Ucoflow
         
         # ============================================================================
         # COFLOW BOUNDARY: N2 coflow inlet (top wall)
         # ============================================================================
-        u_upd[ind_inlet:ind_coflow, self.m-1] = 0
-        v_upd[ind_inlet:ind_coflow, self.m-1] = -Ucoflow
-        u_upd[ind_inlet:ind_coflow, self.m-2] = 0
-        v_upd[ind_inlet:ind_coflow, self.m-2] = -Ucoflow
+        u_upd[self.ind_inlet:self.ind_coflow, self.m-1] = 0
+        v_upd[self.ind_inlet:self.ind_coflow, self.m-1] = -self.Ucoflow
+        u_upd[self.ind_inlet:self.ind_coflow, self.m-2] = 0
+        v_upd[self.ind_inlet:self.ind_coflow, self.m-2] = -self.Ucoflow
         
         # ============================================================================
         # WALL BOUNDARY: Lower wall (outlet region, no-slip)
         # ============================================================================
-        u_upd[ind_coflow:, 0] = 0
-        v_upd[ind_coflow:, 0] = 0
-        u_upd[ind_coflow:, 1] = 0
-        v_upd[ind_coflow:, 1] = 0
+        u_upd[self.ind_coflow:, 0] = 0
+        v_upd[self.ind_coflow:, 0] = 0
+        u_upd[self.ind_coflow:, 1] = 0
+        v_upd[self.ind_coflow:, 1] = 0
         
         # ============================================================================
         # WALL BOUNDARY: Upper wall (outlet region, no-slip)
         # ============================================================================
-        u_upd[ind_coflow:, self.m-1] = 0
-        v_upd[ind_coflow:, self.m-1] = 0
-        u_upd[ind_coflow:, self.m-2] = 0
-        v_upd[ind_coflow:, self.m-2] = 0
+        u_upd[self.ind_coflow:, self.m-1] = 0
+        v_upd[self.ind_coflow:, self.m-1] = 0
+        u_upd[self.ind_coflow:, self.m-2] = 0
+        v_upd[self.ind_coflow:, self.m-2] = 0
         
         # ============================================================================
         # OUTLET BOUNDARY: Right boundary (extrapolation/zero-gradient)
