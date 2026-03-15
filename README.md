@@ -31,6 +31,7 @@ nm_method/
 ├── fluid.py          # Fluid dynamics solver
 ├── chemistry.py      # Chemistry manager and species handling
 ├── constant.py       # Physical constants and parameters
+├── plotting.py        # Visualization functions
 ├── data/             # Simulation output data (*.npy files)
 ├── .gitignore        # Git ignore rules
 └── README.md         # This file
